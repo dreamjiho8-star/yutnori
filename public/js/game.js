@@ -666,7 +666,7 @@ let stepAnim = null; // { team, idx, steps: [{x,y}], current, startTime }
 
 function getPathForTokenClient(route) {
   switch(route) {
-    case 'short5':  return [5,21,22,24,25,26,15,16,17,18,19,20];
+    case 'short5':  return [5,21,22,24,29,30,20];
     case 'short10': return [10,27,28,24,29,30,20];
     case 'short15': return [15,31,32,24,29,30,20];
     default:        return [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
