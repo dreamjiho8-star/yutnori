@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>윷놀이 - 게임</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="game-page">
+  <div class="game-wrapper">
+    <div class="game-main">
+      <canvas id="board-canvas" width="600" height="600"></canvas>
+      <div class="throw-area" id="throw-area">
+        <div class="yut-sticks" id="yut-sticks">
+          <div class="stick"></div>
+          <div class="stick"></div>
+          <div class="stick"></div>
+          <div class="stick"></div>
+        </div>
+        <div class="throw-result" id="throw-result"></div>
+        <button class="btn-throw" id="btn-throw" disabled>윷 던지기</button>
+      </div>
+    </div>
+
+    <div class="game-sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">윷놀이</span>
+        <button class="btn-icon" id="btn-sound" title="사운드">🔊</button>
+      </div>
+
+      <div class="turn-indicator" id="turn-indicator">
+        <span class="turn-label">현재 차례</span>
+        <span class="turn-player" id="turn-player">-</span>
+      </div>
+
+      <div class="section">
+        <h3>플레이어</h3>
+        <div id="player-list"></div>
+      </div>
+
+      <div class="section" id="pending-moves-area">
+        <h3>사용할 이동</h3>
+        <div id="pending-moves-list"></div>
+      </div>
+
+      <div class="section hidden" id="token-select">
+        <h3>이동할 말 선택</h3>
+        <div id="token-buttons"></div>
+        <button class="btn-skip" id="btn-skip" style="display:none">빽도 건너뛰기</button>
+      </div>
+
+      <div class="section game-log-section">
+        <h3>게임 로그</h3>
+        <div id="game-log"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Win Modal -->
+  <div class="modal hidden" id="win-modal">
+    <div class="modal-content">
+      <div class="win-icon">🏆</div>
+      <h2 id="win-text"></h2>
+      <button class="btn btn-gold" onclick="location.href='/'">로비로 돌아가기</button>
+    </div>
+  </div>
+
+  <!-- Disconnect Overlay -->
+  <div class="overlay hidden" id="disconnect-overlay">
+    <div class="overlay-content">
+      <div class="spinner"></div>
+      <div class="overlay-text">재접속 중...</div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/sound.js"></script>
+  <script src="/js/game.js"></script>
+</body>
+</html>

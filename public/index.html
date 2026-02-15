@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>윷놀이 - 온라인 2v2</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="lobby-container">
+    <div class="logo-area">
+      <h1>🎲 윷놀이</h1>
+      <p class="subtitle">온라인 대전</p>
+    </div>
+
+    <!-- Name Input -->
+    <div class="card" id="name-card">
+      <label for="player-name">닉네임</label>
+      <input type="text" id="player-name" placeholder="닉네임을 입력하세요" maxlength="10" autocomplete="off">
+    </div>
+
+    <!-- Mode Select -->
+    <div class="card" id="mode-card">
+      <label>게임 모드</label>
+      <div class="mode-select">
+        <button class="btn btn-mode active" id="btn-mode-1v1" data-mode="1v1">🎯 1 vs 1</button>
+        <button class="btn btn-mode" id="btn-mode-2v2" data-mode="2v2">👥 2 vs 2</button>
+      </div>
+    </div>
+
+    <!-- Main Menu -->
+    <div class="card" id="menu-card">
+      <button class="btn btn-primary" id="btn-create">방 만들기</button>
+      <div class="divider"><span>또는</span></div>
+      <div class="join-row">
+        <input type="text" id="room-code-input" placeholder="방 코드" maxlength="4" style="text-transform:uppercase" autocomplete="off">
+        <button class="btn btn-secondary" id="btn-join">입장</button>
+      </div>
+    </div>
+
+    <!-- Room View -->
+    <div class="card hidden" id="room-card">
+      <div class="room-header">
+        <h2>방 코드: <span id="room-code-display" class="room-code"></span></h2>
+        <button class="btn-small" id="btn-copy-code" title="코드 복사">📋</button>
+      </div>
+      <div class="team-area">
+        <div class="team-column team-a">
+          <h3>🔵 팀 A</h3>
+          <div class="slot" id="slot-a1">비어있음</div>
+          <div class="slot" id="slot-a2">비어있음</div>
+        </div>
+        <div class="vs">VS</div>
+        <div class="team-column team-b">
+          <h3>🔴 팀 B</h3>
+          <div class="slot" id="slot-b1">비어있음</div>
+          <div class="slot" id="slot-b2">비어있음</div>
+        </div>
+      </div>
+      <div class="team-select" id="team-select-area">
+        <button class="btn btn-team-a" id="btn-team-a">팀 A 선택</button>
+        <button class="btn btn-team-b" id="btn-team-b">팀 B 선택</button>
+      </div>
+      <div class="room-actions" id="room-actions">
+        <button class="btn btn-ready" id="btn-ready">준비</button>
+        <button class="btn btn-primary hidden" id="btn-start">게임 시작</button>
+      </div>
+    </div>
+
+    <div id="error-msg" class="error-msg hidden"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/lobby.js"></script>
+</body>
+</html>
