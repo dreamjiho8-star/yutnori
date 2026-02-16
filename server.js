@@ -142,9 +142,9 @@ function computeMove(token, steps) {
   const landPos = path[newIdx];
 
   // Auto-route at corners (only from main path)
+  // Position 15 has no shortcut (diagonal from 15 is longer than main path)
   if (landPos === 5 && route === 'main') newRoute = 'short5';
   if (landPos === 10 && route === 'main') newRoute = 'short10';
-  if (landPos === 15 && route === 'main') newRoute = 'short15';
 
   // Landing on center: switch to center→출발 shortcut route
   if (landPos === 24) newRoute = 'center';
