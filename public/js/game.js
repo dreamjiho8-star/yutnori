@@ -960,7 +960,16 @@ socket.on('disconnect', () => {
   document.getElementById('disconnect-overlay').classList.remove('hidden');
 });
 
+socket.on('return-to-lobby', () => {
+  location.href = '/?rejoin=' + encodeURIComponent(roomCode);
+});
+
 socket.on('move-error', (msg) => alert(msg));
+
+// Return to lobby button (host only)
+document.getElementById('btn-back-to-room').addEventListener('click', () => {
+  socket.emit('return-to-lobby');
+});
 
 // ============================================
 // UI Rendering

@@ -661,11 +661,20 @@ io.on('connection', (socket) => {
       return socket.emit('room-error', '방이 가득 찼습니다.');
     }
 
+    // Assign to team with fewer members (or A if tied)
+    const maxPerTeam = room.mode === '1v1' ? 1 : 2;
+    const teamACount = room.players.filter(p => p && p.team === 'A').length;
+    const teamBCount = room.players.filter(p => p && p.team === 'B').length;
+    let assignTeam;
+    if (teamACount < maxPerTeam) assignTeam = 'A';
+    else if (teamBCount < maxPerTeam) assignTeam = 'B';
+    else assignTeam = 'A'; // fallback
+
     room.players[idx] = {
       id: socket.id,
       pid: data.pid || socket.id,
       name: data.name || '플레이어',
-      team: idx % 2 === 0 ? 'A' : 'B',
+      team: assignTeam,
       ready: false,
       connected: true
     };
@@ -764,6 +773,24 @@ io.on('connection', (socket) => {
 
     // If first player is COM, start their turn
     setTimeout(() => scheduleCOMTurn(currentRoom), 1500);
+  });
+
+  // === RETURN TO LOBBY (same members) ===
+  socket.on('return-to-lobby', () => {
+    if (!currentRoom || playerIdx === null) return;
+    const room = rooms[currentRoom];
+    if (!room || !room.game?.winner) return;
+    // Only host can trigger
+    if (playerIdx !== room.hostIdx) return;
+
+    // Reset game state but keep players
+    room.game = null;
+    room.playerOrder = null;
+    room.players.forEach(p => {
+      if (p && !p.isCOM) p.ready = false;
+    });
+    io.to(currentRoom).emit('return-to-lobby');
+    broadcastRoom(currentRoom);
   });
 
   // === THROW ===

@@ -224,3 +224,14 @@ socket.on('chat-message', (data) => {
   if (typeof sfx !== 'undefined') sfx.chatReceive();
   addLobbyChatMsg(data.name, data.team, data.message);
 });
+
+// Auto-rejoin room after game ends
+const urlParams = new URLSearchParams(window.location.search);
+const rejoinCode = urlParams.get('rejoin');
+if (rejoinCode) {
+  // Clean URL
+  window.history.replaceState({}, '', '/');
+  const savedName = sessionStorage.getItem('yut-name') || '';
+  if (savedName) nameInput.value = savedName;
+  socket.emit('join-room', { roomCode: rejoinCode, name: getName(), pid: myPlayerId });
+}
