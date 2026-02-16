@@ -1154,7 +1154,7 @@ gameChatSend.addEventListener('click', () => {
 });
 
 gameChatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') gameChatSend.click();
+  if (e.key === 'Enter' && !e.isComposing) gameChatSend.click();
 });
 
 socket.on('chat-message', (data) => {
@@ -1249,7 +1249,7 @@ aiChatSend.addEventListener('click', () => {
 });
 
 aiChatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
+  if (e.key === 'Enter' && !e.isComposing) {
     sendAiMessage(aiChatInput.value);
     aiChatInput.value = '';
   }

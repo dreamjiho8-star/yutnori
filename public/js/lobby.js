@@ -164,7 +164,7 @@ lobbyChatSend.addEventListener('click', () => {
 });
 
 lobbyChatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
+  if (e.key === 'Enter' && !e.isComposing) {
     lobbyChatSend.click();
   }
 });
