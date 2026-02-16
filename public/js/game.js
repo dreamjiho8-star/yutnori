@@ -799,6 +799,9 @@ let gameState = null;
 let prevTokens = null;
 let selectedMoveIdx = null;
 let _autoMoveScheduled = false;
+let _moveTimerInterval = null;
+let _moveTimerDeadline = null;
+const MOVE_TIME_LIMIT = 10; // seconds
 let isMyTurn = false;
 let canThrow = true;
 let playerNames = [];
@@ -907,6 +910,30 @@ socket.on('game-state', (state) => {
       if (entry.includes('🎯') && !entry.includes('보너스')) sfx.turnChange();
     });
     lastLogTotal = logTotal;
+
+    // AI 훈수 자동 트리거 (주요 이벤트 감지)
+    const lastLog = newLogs[newLogs.length - 1] || '';
+    if (lastLog.includes('💥')) {
+      requestAutoAdvice('상대 말 잡기 발생!');
+    } else if (lastLog.includes('✅')) {
+      requestAutoAdvice('말이 완주했다!');
+    } else if (lastLog.includes('📦')) {
+      requestAutoAdvice('말을 업었다!');
+    } else if (lastLog.includes('윷') && lastLog.includes('🎲')) {
+      requestAutoAdvice('윷이 나왔다! 추가 턴!');
+    } else if (lastLog.includes('모') && lastLog.includes('🎲')) {
+      requestAutoAdvice('모가 나왔다! 추가 턴!');
+    } else if (lastLog.includes('빽도') && lastLog.includes('🎲')) {
+      requestAutoAdvice('빽도 나왔다 ㅋㅋ');
+    }
+  }
+
+  // 내 이동 단계 시작 시 전략 조언
+  if (state.pendingMoves.length > 0 && !state.throwPhase) {
+    const curOrigIdx = playerOrder[state.currentPlayer];
+    if (curOrigIdx === myPlayerIdx) {
+      requestAutoAdvice('내 이동 차례 시작 - 전략 조언 해줘');
+    }
   }
 
   // Detect token movement for step animation
@@ -920,7 +947,15 @@ socket.on('game-state', (state) => {
           if (prev.pos === 1 && t.pos === 20) {
             // no animation, just teleport
           } else {
-            startStepAnimation(team, i, prev.pos, t.pos, prev.route);
+            // route 전환 시 (예: main→short10) 새 경로에 목적지가 있으면 새 route 사용
+            let animRoute = prev.route;
+            if (t.pos >= 0) {
+              const prevPath = getPathForTokenClient(animRoute || 'main');
+              if (prevPath.indexOf(t.pos) === -1) {
+                animRoute = t.route;
+              }
+            }
+            startStepAnimation(team, i, prev.pos, t.pos, animRoute);
           }
         } else if (prev.pos === -1 && t.pos >= 0) {
           startStepAnimation(team, i, -1, t.pos, 'main');
@@ -956,6 +991,7 @@ socket.on('game-state', (state) => {
 
   // Win
   if (state.winner) {
+    stopMoveTimer();
     sfx.win();
     const modal = document.getElementById('win-modal');
     document.getElementById('win-text').textContent = `팀 ${state.winner} 승리!`;
@@ -1020,16 +1056,95 @@ function renderPlayerList() {
   });
 }
 
+// ============================================
+// Move Timer (10-second decision timer)
+// ============================================
+function startMoveTimer() {
+  stopMoveTimer();
+  const timerBar = document.getElementById('move-timer-bar');
+  const timerFill = document.getElementById('move-timer-fill');
+  const timerText = document.getElementById('move-timer-text');
+  timerBar.classList.remove('hidden');
+  timerFill.classList.remove('urgent');
+  timerFill.style.width = '100%';
+  timerText.textContent = MOVE_TIME_LIMIT;
+  _moveTimerDeadline = Date.now() + MOVE_TIME_LIMIT * 1000;
+
+  _moveTimerInterval = setInterval(() => {
+    const remaining = Math.max(0, _moveTimerDeadline - Date.now());
+    const secs = Math.ceil(remaining / 1000);
+    const pct = (remaining / (MOVE_TIME_LIMIT * 1000)) * 100;
+    timerFill.style.width = pct + '%';
+    timerText.textContent = secs;
+    if (secs <= 3) timerFill.classList.add('urgent');
+
+    if (remaining <= 0) {
+      stopMoveTimer();
+      autoSelectRandomMove();
+    }
+  }, 100);
+}
+
+function stopMoveTimer() {
+  if (_moveTimerInterval) {
+    clearInterval(_moveTimerInterval);
+    _moveTimerInterval = null;
+  }
+  _moveTimerDeadline = null;
+  const timerBar = document.getElementById('move-timer-bar');
+  if (timerBar) timerBar.classList.add('hidden');
+}
+
+function autoSelectRandomMove() {
+  if (!isMyTurn || !gameState || gameState.throwPhase || gameState.winner) return;
+  if (gameState.pendingMoves.length === 0) return;
+  if (_autoMoveScheduled) return;
+
+  const team = getTeamForTurn(gameState.currentPlayer);
+  const tokens = gameState.tokens[team];
+  const moves = gameState.pendingMoves;
+
+  // 가능한 (move, token) 조합 찾기
+  const validCombos = [];
+  for (let mi = 0; mi < moves.length; mi++) {
+    for (let ti = 0; ti < tokens.length; ti++) {
+      const t = tokens[ti];
+      if (t.pos === -2 || t.pos === -3) continue;
+      if (t.pos === -1 && moves[mi].value === -1) continue;
+      validCombos.push({ moveIdx: mi, tokenIdx: ti });
+    }
+  }
+
+  if (validCombos.length > 0) {
+    const choice = validCombos[Math.floor(Math.random() * validCombos.length)];
+    _autoMoveScheduled = true;
+    sfx.move();
+    socket.emit('move-token', { tokenIdx: choice.tokenIdx, moveIdx: choice.moveIdx });
+    selectedMoveIdx = null;
+  } else {
+    // 이동 가능한 말이 없으면 스킵
+    _autoMoveScheduled = true;
+    socket.emit('skip-move', { moveIdx: 0 });
+    selectedMoveIdx = null;
+  }
+}
+
 function renderPendingMoves(moves) {
   const container = document.getElementById('pending-moves-list');
   container.innerHTML = '';
 
   if (!isMyTurn || moves.length === 0 || (gameState && gameState.throwPhase)) {
     _autoMoveScheduled = false;
+    stopMoveTimer();
     if (!isMyTurn) container.textContent = '상대 차례입니다.';
     else if (gameState && gameState.throwPhase) container.textContent = '윷을 던지세요!';
     else container.textContent = '윷을 던지세요!';
     return;
+  }
+
+  // 이동 선택 단계 진입 시 타이머 시작 (이미 돌고 있지 않으면)
+  if (!_moveTimerInterval && !_autoMoveScheduled) {
+    startMoveTimer();
   }
 
   // Auto-select if only one move available
@@ -1090,12 +1205,13 @@ function renderTokenSelect() {
     const autoMoveIdx = selectedMoveIdx;
     selectedMoveIdx = null;
     _autoMoveScheduled = true;
+    stopMoveTimer();
     area.classList.add('hidden');
     setTimeout(() => {
       _autoMoveScheduled = false;
       sfx.move();
       socket.emit('move-token', { tokenIdx: autoIdx, moveIdx: autoMoveIdx });
-    }, 300);
+    }, 1200);
     return;
   }
 
@@ -1104,11 +1220,12 @@ function renderTokenSelect() {
     const autoMoveIdx = selectedMoveIdx;
     selectedMoveIdx = null;
     _autoMoveScheduled = true;
+    stopMoveTimer();
     area.classList.add('hidden');
     setTimeout(() => {
       _autoMoveScheduled = false;
       socket.emit('skip-move', { moveIdx: autoMoveIdx });
-    }, 300);
+    }, 1200);
     return;
   }
 
@@ -1127,6 +1244,7 @@ function renderTokenSelect() {
 
     btn.onclick = () => {
       sfx.move();
+      stopMoveTimer();
       socket.emit('move-token', { tokenIdx: i, moveIdx: selectedMoveIdx });
       selectedMoveIdx = null;
     };
@@ -1235,6 +1353,7 @@ canvas.addEventListener('click', (e) => {
 
   if (closest !== null) {
     sfx.move();
+    stopMoveTimer();
     socket.emit('move-token', { tokenIdx: closest, moveIdx: selectedMoveIdx });
     selectedMoveIdx = null;
   }
@@ -1417,6 +1536,40 @@ aiToggleBtn.addEventListener('click', () => {
   aiPanel.classList.add('mobile-open');
   aiToggleBtn.classList.add('hidden');
 });
+
+// ============================================
+// Proactive AI 훈수 (Auto Commentary)
+// ============================================
+let _lastAdviceTime = 0;
+let _advicePending = false;
+const ADVICE_COOLDOWN = 8000; // 8초 쿨다운
+
+async function requestAutoAdvice(event) {
+  const now = Date.now();
+  if (_advicePending || now - _lastAdviceTime < ADVICE_COOLDOWN) return;
+  if (!gameState) return;
+
+  _advicePending = true;
+  _lastAdviceTime = now;
+
+  try {
+    const res = await fetch('/api/auto-advice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event,
+        gameState: buildGameStateText()
+      })
+    });
+    const data = await res.json();
+    if (data.reply && data.reply.trim()) {
+      addAiMessage(data.reply, false);
+    }
+  } catch (err) {
+    // 조용히 실패
+  }
+  _advicePending = false;
+}
 
 // ============================================
 // Emotional Game Reactions

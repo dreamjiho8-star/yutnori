@@ -58,6 +58,48 @@ ${gameState}`
   }
 });
 
+// === AI Auto-Advice (Proactive 훈수) ===
+app.post('/api/auto-advice', async (req, res) => {
+  try {
+    const { gameState, event } = req.body;
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) return res.json({ reply: '' });
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          {
+            role: 'system',
+            content: `너는 옆에서 윷놀이 보면서 훈수두는 친구야! 게임 상황을 보고 자동으로 한마디 해.
+규칙: 도(1), 개(2), 걸(3), 윷(4,추가턴), 모(5,추가턴), 빽도(-1). 꼭짓점(5,10)에서 대각선 숏컷. 상대 말 잡으면 추가턴.
+말투: 친구한테 말하듯 반말로, 짧고 재밌게 (1-2문장). 전략적 조언, 감탄, 놀림, 응원 등 상황에 맞게 자유롭게!
+이모지 적극 활용. 매번 다른 스타일로 말해.`
+          },
+          { role: 'user', content: `[상황: ${event}]\n\n${gameState}` }
+        ],
+        temperature: 0.9,
+        max_tokens: 100,
+      }),
+    });
+
+    const data = await response.json();
+    if (data.choices?.[0]?.message?.content) {
+      res.json({ reply: data.choices[0].message.content });
+    } else {
+      res.json({ reply: '' });
+    }
+  } catch (err) {
+    console.error('AI auto-advice error:', err);
+    res.json({ reply: '' });
+  }
+});
+
 const rooms = {};
 
 // === Board Path Definitions ===
@@ -137,6 +179,11 @@ function computeMove(token, steps) {
     startIdx = 0; // 출발(pos 0)에서 출발, 도(1)이면 pos 1로 이동
     route = 'main';
   } else {
+    // 꼭짓점(5,10)에서 출발 시 반드시 숏컷 경로 사용
+    // (빽도로 꼭짓점에 도착한 경우 route가 'main'으로 남아있을 수 있음)
+    if (pos === 5 && route === 'main') route = 'short5';
+    if (pos === 10 && route === 'main') route = 'short10';
+
     path = getPathForToken(route);
     startIdx = path.indexOf(pos);
     if (startIdx === -1) {
