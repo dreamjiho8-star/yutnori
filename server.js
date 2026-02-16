@@ -96,6 +96,15 @@ function computeMove(token, steps) {
 
   // 빽도 (move back 1)
   if (steps === -1) {
+    // Center(24)에서 빽도: prevRoute로 돌아가기
+    if (pos === 24 && route === 'center') {
+      const backRoute = token.prevRoute || 'short5';
+      const prevPath = getPathForToken(backRoute);
+      const ci = prevPath.indexOf(24);
+      if (ci > 0) {
+        return { newPos: prevPath[ci - 1], newRoute: backRoute, finished: false };
+      }
+    }
     const path = getPathForToken(route);
     const idx = path.indexOf(pos);
     if (idx > 0) {
@@ -155,7 +164,10 @@ function computeMove(token, steps) {
   if (landPos === 10 && route === 'main') newRoute = 'short10';
 
   // Landing on center: switch to center→출발 shortcut route
-  if (landPos === 24) newRoute = 'center';
+  if (landPos === 24) {
+    newRoute = 'center';
+    return { newPos: landPos, newRoute, finished: false, prevRoute: route };
+  }
 
   return { newPos: landPos, newRoute, finished: false };
 }
@@ -494,6 +506,7 @@ function scheduleCOMTurn(roomCode) {
 
       token.pos = result.newPos;
       token.route = result.newRoute;
+      if (result.prevRoute) token.prevRoute = result.prevRoute;
       room2.game.pendingMoves.splice(moveIdx, 1);
 
       if (result.finished) {
@@ -817,6 +830,7 @@ io.on('connection', (socket) => {
     // Apply move
     token.pos = result.newPos;
     token.route = result.newRoute;
+    if (result.prevRoute) token.prevRoute = result.prevRoute;
 
     // Remove used move
     room.game.pendingMoves.splice(moveIdx, 1);
