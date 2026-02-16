@@ -1105,6 +1105,63 @@ canvas.addEventListener('click', (e) => {
 });
 
 // ============================================
+// Player Chat (in-game)
+// ============================================
+const gameChatMessages = document.getElementById('game-chat-messages');
+const gameChatInput = document.getElementById('game-chat-input');
+const gameChatSend = document.getElementById('game-chat-send');
+const tabLog = document.getElementById('tab-log');
+const tabChat = document.getElementById('tab-chat');
+const gameLogEl = document.getElementById('game-log');
+const gameChatEl = document.getElementById('game-chat');
+let chatUnread = 0;
+
+document.querySelectorAll('.log-chat-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.log-chat-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    if (tab.dataset.tab === 'log') {
+      gameLogEl.classList.remove('hidden');
+      gameChatEl.classList.add('hidden');
+    } else {
+      gameLogEl.classList.add('hidden');
+      gameChatEl.classList.remove('hidden');
+      chatUnread = 0;
+      tabChat.textContent = '💬 채팅';
+    }
+  });
+});
+
+function addGameChatMsg(name, team, message) {
+  const div = document.createElement('div');
+  const color = team === 'A' ? '#4A8FE7' : '#E84118';
+  div.innerHTML = `<span style="color:${color}; font-weight:700;">${name}</span>: ${message}`;
+  gameChatMessages.appendChild(div);
+  gameChatMessages.scrollTop = gameChatMessages.scrollHeight;
+
+  // Show unread badge if not on chat tab
+  if (!tabChat.classList.contains('active')) {
+    chatUnread++;
+    tabChat.textContent = `💬 채팅 (${chatUnread})`;
+  }
+}
+
+gameChatSend.addEventListener('click', () => {
+  const msg = gameChatInput.value.trim();
+  if (!msg) return;
+  socket.emit('chat-message', { message: msg });
+  gameChatInput.value = '';
+});
+
+gameChatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') gameChatSend.click();
+});
+
+socket.on('chat-message', (data) => {
+  addGameChatMsg(data.name, data.team, data.message);
+});
+
+// ============================================
 // AI Chat
 // ============================================
 function buildGameStateText() {

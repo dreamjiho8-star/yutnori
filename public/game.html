@@ -50,8 +50,18 @@
       </div>
 
       <div class="section game-log-section">
-        <h3>게임 로그</h3>
+        <div class="log-chat-tabs">
+          <button class="log-chat-tab active" id="tab-log" data-tab="log">게임 로그</button>
+          <button class="log-chat-tab" id="tab-chat" data-tab="chat">💬 채팅</button>
+        </div>
         <div id="game-log"></div>
+        <div id="game-chat" class="hidden">
+          <div id="game-chat-messages"></div>
+          <div class="game-chat-input-area">
+            <input type="text" id="game-chat-input" placeholder="메시지 입력..." maxlength="200" autocomplete="off">
+            <button class="game-chat-send" id="game-chat-send">전송</button>
+          </div>
+        </div>
       </div>
     </div>
 

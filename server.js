@@ -651,6 +651,18 @@ io.on('connection', (socket) => {
     broadcastGameState(currentRoom);
   } catch(err) { console.error('skip-move error:', err); } });
 
+  // === PLAYER CHAT ===
+  socket.on('chat-message', (data) => {
+    if (!currentRoom || playerIdx === null) return;
+    const room = rooms[currentRoom];
+    if (!room || !room.players[playerIdx]) return;
+    const name = room.players[playerIdx].name || '플레이어';
+    const team = room.players[playerIdx].team;
+    const msg = (data?.message || '').slice(0, 200);
+    if (!msg.trim()) return;
+    io.to(currentRoom).emit('chat-message', { name, team, message: msg });
+  });
+
   socket.on('disconnect', () => {
     if (!currentRoom) return;
     const room = rooms[currentRoom];

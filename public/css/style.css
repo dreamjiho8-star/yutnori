@@ -682,6 +682,100 @@ input[type="text"]:focus {
 #game-log::-webkit-scrollbar-track { background: transparent; }
 #game-log::-webkit-scrollbar-thumb { background: rgba(212, 168, 67, 0.15); border-radius: 2px; }
 
+/* Log/Chat Tabs */
+.log-chat-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.log-chat-tab {
+  flex: 1;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(212, 168, 67, 0.1);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: rgba(212, 168, 67, 0.5);
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.log-chat-tab.active {
+  background: rgba(212, 168, 67, 0.1);
+  color: var(--gold);
+  border-color: rgba(212, 168, 67, 0.25);
+}
+
+.log-chat-tab:hover { color: var(--gold); }
+
+/* Game Chat */
+#game-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+#game-chat-messages {
+  flex: 1;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+  line-height: 1.8;
+  color: var(--text-cream);
+}
+
+#game-chat-messages::-webkit-scrollbar { width: 3px; }
+#game-chat-messages::-webkit-scrollbar-track { background: transparent; }
+#game-chat-messages::-webkit-scrollbar-thumb { background: rgba(212, 168, 67, 0.15); border-radius: 2px; }
+
+#game-chat-messages div { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.02); }
+
+.game-chat-input-area {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.game-chat-input-area input {
+  flex: 1;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(212, 168, 67, 0.15);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: #eee;
+  font-size: 0.8rem;
+  font-family: inherit;
+}
+
+.game-chat-input-area input:focus { outline: none; border-color: rgba(212, 168, 67, 0.4); }
+
+.game-chat-send {
+  background: linear-gradient(135deg, var(--gold), #B8860B);
+  color: #1a0f0a;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-weight: 700;
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.chat-unread-badge {
+  background: var(--primary);
+  color: white;
+  border-radius: 50%;
+  font-size: 0.6rem;
+  padding: 1px 5px;
+  margin-left: 4px;
+}
+
 /* --- Win Modal --- */
 .modal {
   position: fixed;

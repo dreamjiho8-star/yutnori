@@ -67,6 +67,16 @@
       </div>
     </div>
 
+    <!-- Room Chat -->
+    <div class="card hidden" id="chat-card">
+      <h3 style="font-size:0.85rem; color:#8B7355; margin-bottom:8px;">💬 채팅</h3>
+      <div id="lobby-chat-messages" style="height:150px; overflow-y:auto; background:#FDF6EC; border:1px solid #E8D5B7; border-radius:8px; padding:8px; margin-bottom:8px; font-size:0.82rem; line-height:1.7;"></div>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="lobby-chat-input" placeholder="메시지 입력..." maxlength="200" autocomplete="off" style="flex:1;">
+        <button class="btn btn-secondary" id="lobby-chat-send" style="width:auto; padding:10px 18px;">전송</button>
+      </div>
+    </div>
+
     <div id="error-msg" class="error-msg hidden"></div>
   </div>
 

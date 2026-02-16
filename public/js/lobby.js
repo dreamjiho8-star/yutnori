@@ -80,6 +80,7 @@ function showRoom() {
   document.getElementById('name-card').classList.add('hidden');
   document.getElementById('mode-card').classList.add('hidden');
   roomCard.classList.remove('hidden');
+  document.getElementById('chat-card').classList.remove('hidden');
   roomCodeDisplay.textContent = roomCode;
   if (isHost) btnStart.classList.remove('hidden');
 }
@@ -140,4 +141,34 @@ socket.on('game-started', (data) => {
   sessionStorage.setItem('yut-order', JSON.stringify(data.playerOrder));
   sessionStorage.setItem('yut-name', getName());
   window.location.href = '/game.html';
+});
+
+// === Lobby Chat ===
+const lobbyChatMessages = document.getElementById('lobby-chat-messages');
+const lobbyChatInput = document.getElementById('lobby-chat-input');
+const lobbyChatSend = document.getElementById('lobby-chat-send');
+
+function addLobbyChatMsg(name, team, message) {
+  const div = document.createElement('div');
+  const color = team === 'A' ? '#1B3A6B' : '#C23616';
+  div.innerHTML = `<strong style="color:${color}">${name}</strong>: ${message}`;
+  lobbyChatMessages.appendChild(div);
+  lobbyChatMessages.scrollTop = lobbyChatMessages.scrollHeight;
+}
+
+lobbyChatSend.addEventListener('click', () => {
+  const msg = lobbyChatInput.value.trim();
+  if (!msg) return;
+  socket.emit('chat-message', { message: msg });
+  lobbyChatInput.value = '';
+});
+
+lobbyChatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    lobbyChatSend.click();
+  }
+});
+
+socket.on('chat-message', (data) => {
+  addLobbyChatMsg(data.name, data.team, data.message);
 });
