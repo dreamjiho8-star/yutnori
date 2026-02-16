@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -65,9 +66,10 @@ const rooms = {};
 
 function getPathForToken(route) {
   switch(route) {
-    case 'short5':  return [5,21,22,24,29,30,20];
+    case 'short5':  return [5,21,22,24,32,31,15,16,17,18,19,20];
     case 'short10': return [10,27,28,24,29,30,20];
     case 'short15': return [15,31,32,24,29,30,20];
+    case 'center':  return [24,29,30,20];
     default:        return [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
   }
 }
@@ -127,15 +129,6 @@ function computeMove(token, steps) {
   const newIdx = startIdx + steps;
   let newRoute = route;
 
-  // Center (24) is a mandatory stop on shortcut paths
-  // If token would pass through center, stop at center instead
-  if (route === 'short5' || route === 'short10' || route === 'short15') {
-    const centerIdx = path.indexOf(24);
-    if (centerIdx !== -1 && startIdx < centerIdx && newIdx > centerIdx) {
-      return { newPos: 24, newRoute: route, finished: false };
-    }
-  }
-
   // Finish: reach or pass the last position (overshoot counts as finish)
   if (newIdx >= path.length) {
     return { newPos: -2, newRoute: route, finished: true };
@@ -152,6 +145,9 @@ function computeMove(token, steps) {
   if (landPos === 5 && route === 'main') newRoute = 'short5';
   if (landPos === 10 && route === 'main') newRoute = 'short10';
   if (landPos === 15 && route === 'main') newRoute = 'short15';
+
+  // Landing on center: switch to center→출발 shortcut route
+  if (landPos === 24) newRoute = 'center';
 
   return { newPos: landPos, newRoute, finished: false };
 }

@@ -666,9 +666,10 @@ let stepAnim = null; // { team, idx, steps: [{x,y}], current, startTime }
 
 function getPathForTokenClient(route) {
   switch(route) {
-    case 'short5':  return [5,21,22,24,29,30,20];
+    case 'short5':  return [5,21,22,24,32,31,15,16,17,18,19,20];
     case 'short10': return [10,27,28,24,29,30,20];
     case 'short15': return [15,31,32,24,29,30,20];
+    case 'center':  return [24,29,30,20];
     default:        return [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
   }
 }
@@ -1263,11 +1264,13 @@ document.querySelectorAll('.ai-quick-btn').forEach(btn => {
 
 document.getElementById('btn-toggle-ai').addEventListener('click', () => {
   aiPanel.style.display = 'none';
+  aiPanel.classList.remove('mobile-open');
   aiToggleBtn.classList.remove('hidden');
 });
 
 aiToggleBtn.addEventListener('click', () => {
   aiPanel.style.display = 'flex';
+  aiPanel.classList.add('mobile-open');
   aiToggleBtn.classList.add('hidden');
 });
 
