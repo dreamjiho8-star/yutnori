@@ -32,8 +32,9 @@ app.post('/api/chat', async (req, res) => {
         messages: [
           {
             role: 'system',
-            content: `너는 윷놀이 전문 AI 조언자야. 플레이어에게 전략적 조언을 한국어로 짧고 명확하게 해줘 (2-3문장).
-게임 규칙: 윷놀이는 4개의 말을 출발→완주시키는 보드게임. 도(1칸), 개(2칸), 걸(3칸), 윷(4칸,추가턴), 모(5칸,추가턴), 빽도(-1칸). 상대 말을 잡으면 추가턴. 꼭짓점(5,10,15)에서 대각선 숏컷 가능. 말 업기(같은 위치 아군)로 함께 이동 가능.
+            content: `너는 윷놀이 같이 하는 친구야! 전략 조언도 해주고, 잡담이나 농담도 자유롭게 해. 친근하고 재밌게 대화해줘. 한국어로 자연스럽게 말해 (2-3문장).
+윷놀이에 대해 물어보면 답해줘: 4개의 말을 출발→완주시키는 보드게임. 도(1칸), 개(2칸), 걸(3칸), 윷(4칸,추가턴), 모(5칸,추가턴), 빽도(-1칸). 상대 말을 잡으면 추가턴. 꼭짓점(5,10,15)에서 대각선 숏컷 가능. 말 업기(같은 위치 아군)로 함께 이동 가능.
+윷놀이와 관련 없는 질문도 자유롭게 대답해줘. 유머와 이모지를 적극 활용해!
 
 현재 게임 상황:
 ${gameState}`
@@ -269,7 +270,7 @@ function broadcastRoom(roomCode) {
   const room = rooms[roomCode];
   if (!room) return;
   io.to(roomCode).emit('room-update', {
-    players: room.players.map(p => p ? { name: p.name, team: p.team, ready: p.ready, connected: p.connected } : null),
+    players: room.players.map(p => p ? { name: p.name, team: p.team, ready: p.ready, connected: p.connected, isCOM: !!p.isCOM } : null),
     hostIdx: room.hostIdx,
     mode: room.mode || '2v2'
   });
@@ -286,6 +287,281 @@ function broadcastGameState(roomCode) {
     log: room.game.log.slice(-20),
     winner: room.game.winner
   });
+}
+
+// === COM AI Logic ===
+
+function comEvaluateMove(token, tokenIdx, move, team, gameTokens) {
+  if (token.pos === -2 || token.pos === -3) return -Infinity;
+  const result = computeMove(token, move.value);
+  if (!result) return -Infinity;
+
+  let score = 0;
+  const oppTeam = team === 'A' ? 'B' : 'A';
+  const oppTokens = gameTokens[oppTeam];
+  const myTokens = gameTokens[team];
+
+  // Finishing is highest priority
+  if (result.finished) {
+    score += 1000 + (token.stacked || 1) * 200;
+    return score;
+  }
+
+  // Capture opportunity
+  if (result.newPos >= 0) {
+    for (let i = 0; i < oppTokens.length; i++) {
+      if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, result.newPos)) {
+        score += 500 + (oppTokens[i].stacked || 1) * 100;
+      }
+    }
+  }
+
+  // Stacking with own pieces
+  if (result.newPos >= 0) {
+    for (let i = 0; i < myTokens.length; i++) {
+      if (i !== tokenIdx && myTokens[i].pos >= 0 && samePosition(myTokens[i].pos, result.newPos)) {
+        score += 80;
+      }
+    }
+  }
+
+  // Bringing a piece out from home
+  if (token.pos === -1) {
+    score += 60;
+  }
+
+  // Avoid being captured: check if landing position is dangerous
+  if (result.newPos >= 0) {
+    for (let i = 0; i < oppTokens.length; i++) {
+      if (oppTokens[i].pos < 0) continue;
+      // Simple proximity check on main path
+      const oppPath = getPathForToken(oppTokens[i].route || 'main');
+      const oppIdx = oppPath.indexOf(oppTokens[i].pos);
+      const myPath = getPathForToken(result.newRoute || 'main');
+      const myIdx = myPath.indexOf(result.newPos);
+      if (oppIdx >= 0 && myIdx >= 0 && oppIdx < myIdx && (myIdx - oppIdx) <= 5) {
+        score -= 40 * (token.stacked || 1); // More penalty for stacked pieces
+      }
+    }
+  }
+
+  // Prefer advancing pieces that are further along
+  if (token.pos >= 0) {
+    const path = getPathForToken(token.route || 'main');
+    const idx = path.indexOf(token.pos);
+    if (idx >= 0) score += idx * 3;
+  }
+
+  // Prefer using shortcuts
+  if (result.newPos === 5 || result.newPos === 10) score += 30;
+
+  // Small random factor to avoid predictability
+  score += Math.random() * 10;
+
+  return score;
+}
+
+function comChooseBestMove(game, team) {
+  const tokens = game.tokens[team];
+  let bestScore = -Infinity;
+  let bestChoice = null;
+
+  for (let mi = 0; mi < game.pendingMoves.length; mi++) {
+    const move = game.pendingMoves[mi];
+    for (let ti = 0; ti < tokens.length; ti++) {
+      const score = comEvaluateMove(tokens[ti], ti, move, team, game.tokens);
+      if (score > bestScore) {
+        bestScore = score;
+        bestChoice = { tokenIdx: ti, moveIdx: mi };
+      }
+    }
+  }
+
+  return bestChoice;
+}
+
+function comFindSkippableMove(game, team) {
+  const tokens = game.tokens[team];
+  for (let mi = 0; mi < game.pendingMoves.length; mi++) {
+    const move = game.pendingMoves[mi];
+    let anyCanMove = false;
+    for (let ti = 0; ti < tokens.length; ti++) {
+      if (tokens[ti].pos === -2 || tokens[ti].pos === -3) continue;
+      if (computeMove(tokens[ti], move.value) !== null) { anyCanMove = true; break; }
+    }
+    if (!anyCanMove) return mi;
+  }
+  return -1;
+}
+
+function scheduleCOMTurn(roomCode) {
+  const room = rooms[roomCode];
+  if (!room?.game?.started || room.game.winner) return;
+
+  const currentPlayerOrigIdx = room.playerOrder[room.game.currentPlayer];
+  const currentPlayer = room.players[currentPlayerOrigIdx];
+  if (!currentPlayer?.isCOM) return;
+
+  // Prevent duplicate COM scheduling
+  if (room.game._comScheduled) return;
+  room.game._comScheduled = true;
+
+  const team = getTeamForPlayer(room.game.currentPlayer);
+
+  if (room.game.throwPhase) {
+    // COM throws yut after a delay
+    setTimeout(() => {
+      const room2 = rooms[roomCode];
+      if (!room2?.game?.started || room2.game.winner) return;
+      room2.game._comScheduled = false;
+      if (!room2.game.throwPhase) return;
+
+      const result = throwYut();
+      room2.game.pendingMoves.push(result);
+
+      if (result.extraTurn) {
+        room2.game.throwPhase = true;
+      } else {
+        room2.game.throwPhase = false;
+      }
+
+      room2.game.log.push(`🎲 COM: ${result.name} (${result.value > 0 ? '+' : ''}${result.value})`);
+
+      io.to(roomCode).emit('yut-result', {
+        result,
+        canThrowAgain: result.extraTurn,
+        pendingMoves: room2.game.pendingMoves
+      });
+
+      broadcastGameState(roomCode);
+
+      // Continue COM turn
+      setTimeout(() => scheduleCOMTurn(roomCode), 800);
+    }, 1000);
+  } else {
+    // COM makes a move after a delay
+    setTimeout(() => {
+      const room2 = rooms[roomCode];
+      if (!room2?.game?.started || room2.game.winner) return;
+      room2.game._comScheduled = false;
+      if (room2.game.throwPhase) return;
+      if (room2.game.pendingMoves.length === 0) return;
+
+      const team2 = getTeamForPlayer(room2.game.currentPlayer);
+
+      // Try to find a skipable move first if needed
+      const skipIdx = comFindSkippableMove(room2.game, team2);
+      const bestMove = comChooseBestMove(room2.game, team2);
+
+      if (!bestMove || bestMove.tokenIdx === undefined) {
+        // Skip
+        if (skipIdx >= 0) {
+          const move = room2.game.pendingMoves[skipIdx];
+          room2.game.pendingMoves.splice(skipIdx, 1);
+          room2.game.log.push(`⏭️ ${move.name} 건너뛰기`);
+
+          if (room2.game.pendingMoves.length === 0) {
+            advanceTurn(room2, roomCode);
+          }
+          broadcastGameState(roomCode);
+          setTimeout(() => scheduleCOMTurn(roomCode), 600);
+        }
+        return;
+      }
+
+      // Execute the move
+      const { tokenIdx, moveIdx } = bestMove;
+      const tokens = room2.game.tokens[team2];
+      const token = tokens[tokenIdx];
+      const move = room2.game.pendingMoves[moveIdx];
+
+      const result = computeMove(token, move.value);
+      if (!result) {
+        // Fallback: skip this move
+        if (skipIdx >= 0) {
+          const skipMove = room2.game.pendingMoves[skipIdx];
+          room2.game.pendingMoves.splice(skipIdx, 1);
+          room2.game.log.push(`⏭️ ${skipMove.name} 건너뛰기`);
+          if (room2.game.pendingMoves.length === 0) {
+            advanceTurn(room2, roomCode);
+          }
+          broadcastGameState(roomCode);
+        }
+        setTimeout(() => scheduleCOMTurn(roomCode), 600);
+        return;
+      }
+
+      token.pos = result.newPos;
+      token.route = result.newRoute;
+      room2.game.pendingMoves.splice(moveIdx, 1);
+
+      if (result.finished) {
+        const count = finishStack(tokens, tokenIdx);
+        room2.game.log.push(`✅ COM의 말이 완주했습니다! (${count}개)`);
+
+        if (checkWin(tokens)) {
+          room2.game.winner = team2;
+          room2.game.log.push(`🏆 팀 ${team2} 승리!`);
+          io.to(roomCode).emit('game-over', { winner: team2 });
+          broadcastGameState(roomCode);
+          return;
+        }
+      } else if (token.pos >= 0) {
+        // Check capture
+        const oppTeam = team2 === 'A' ? 'B' : 'A';
+        const oppTokens = room2.game.tokens[oppTeam];
+
+        for (let i = 0; i < oppTokens.length; i++) {
+          if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
+            const capturedCount = captureStack(oppTokens, i);
+            room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+            room2.game.captureBonus = true;
+          }
+        }
+
+        // Check stacking
+        for (let i = 0; i < tokens.length; i++) {
+          if (i !== tokenIdx && tokens[i].pos >= 0 && samePosition(tokens[i].pos, token.pos)) {
+            if (token.pos === 0 && tokens[i].pos === 20) {
+              token.pos = 20;
+              token.route = tokens[i].route;
+            }
+            stackTokens(tokens, tokenIdx, i);
+            room2.game.log.push(`📦 말을 업었습니다! (${token.stacked}개)`);
+          }
+        }
+      }
+
+      room2.game.log.push(`➡️ COM: 말 ${tokenIdx + 1}을(를) ${move.name}(${move.value})만큼 이동`);
+
+      if (room2.game.pendingMoves.length === 0) {
+        advanceTurn(room2, roomCode);
+      }
+
+      broadcastGameState(roomCode);
+
+      // Continue if COM has more moves or next turn is also COM
+      setTimeout(() => scheduleCOMTurn(roomCode), 800);
+    }, 1200);
+  }
+}
+
+function advanceTurn(room, roomCode) {
+  if (room.game.captureBonus) {
+    room.game.captureBonus = false;
+    room.game.throwPhase = true;
+    const currentOrigIdx = room.playerOrder[room.game.currentPlayer];
+    const playerName = room.players[currentOrigIdx]?.name || 'COM';
+    room.game.log.push(`🎯 잡기 보너스! ${playerName}님이 다시 던집니다.`);
+  } else {
+    const totalPlayers = room.game.totalPlayers || room.playerOrder.length;
+    room.game.currentPlayer = (room.game.currentPlayer + 1) % totalPlayers;
+    room.game.captureBonus = false;
+    room.game.throwPhase = true;
+    const nextOrigIdx = room.playerOrder[room.game.currentPlayer];
+    const nextName = room.players[nextOrigIdx]?.name || 'COM';
+    room.game.log.push(`🎯 ${nextName}님의 차례입니다.`);
+  }
 }
 
 // === Socket Handlers ===
@@ -419,7 +695,7 @@ io.on('connection', (socket) => {
 
     const mode = room.mode || '2v2';
 
-    const allReady = room.players.every(p => p && p.ready);
+    const allReady = room.players.every(p => p && (p.ready || p.isCOM));
     if (!allReady) return socket.emit('room-error', '모든 플레이어가 준비되어야 합니다.');
 
     if (mode === '1v1') {
@@ -467,6 +743,9 @@ io.on('connection', (socket) => {
 
     io.to(currentRoom).emit('game-started', { playerOrder: room.playerOrder, mode: mode });
     broadcastGameState(currentRoom);
+
+    // If first player is COM, start their turn
+    setTimeout(() => scheduleCOMTurn(currentRoom), 1500);
   });
 
   // === THROW ===
@@ -584,22 +863,13 @@ io.on('connection', (socket) => {
 
     // Check if turn should advance
     if (room.game.pendingMoves.length === 0) {
-      if (room.game.captureBonus) {
-        room.game.captureBonus = false;
-        room.game.throwPhase = true;
-        room.game.log.push(`🎯 잡기 보너스! ${playerName}님이 다시 던집니다.`);
-      } else {
-        const totalPlayers = room.game.totalPlayers || room.playerOrder.length;
-        room.game.currentPlayer = (room.game.currentPlayer + 1) % totalPlayers;
-        room.game.captureBonus = false;
-        room.game.throwPhase = true;
-        const nextOrigIdx = room.playerOrder[room.game.currentPlayer];
-        const nextName = room.players[nextOrigIdx]?.name || '플레이어';
-        room.game.log.push(`🎯 ${nextName}님의 차례입니다.`);
-      }
+      advanceTurn(room, currentRoom);
     }
 
     broadcastGameState(currentRoom);
+
+    // If next player is COM, schedule their turn
+    setTimeout(() => scheduleCOMTurn(currentRoom), 800);
   } catch(err) { console.error('move-token error:', err); } });
 
   // === SKIP MOVE ===
@@ -632,27 +902,68 @@ io.on('connection', (socket) => {
     }
 
     room.game.pendingMoves.splice(moveIdx, 1);
-    const playerName = room.players[playerIdx]?.name || '플레이어';
     room.game.log.push(`⏭️ ${move.name} 건너뛰기`);
 
     if (room.game.pendingMoves.length === 0) {
-      if (room.game.captureBonus) {
-        room.game.captureBonus = false;
-        room.game.throwPhase = true;
-        room.game.log.push(`🎯 잡기 보너스! ${playerName}님이 다시 던집니다.`);
-      } else {
-        const totalPlayers = room.game.totalPlayers || room.playerOrder.length;
-        room.game.currentPlayer = (room.game.currentPlayer + 1) % totalPlayers;
-        room.game.captureBonus = false;
-        room.game.throwPhase = true;
-        const nextOrigIdx = room.playerOrder[room.game.currentPlayer];
-        const nextName = room.players[nextOrigIdx]?.name || '플레이어';
-        room.game.log.push(`🎯 ${nextName}님의 차례입니다.`);
-      }
+      advanceTurn(room, currentRoom);
     }
 
     broadcastGameState(currentRoom);
+
+    // If next player is COM, schedule their turn
+    setTimeout(() => scheduleCOMTurn(currentRoom), 800);
   } catch(err) { console.error('skip-move error:', err); } });
+
+  // === COM PLAYER MANAGEMENT ===
+  socket.on('toggle-com', (data) => {
+    if (!currentRoom || playerIdx === null) return;
+    const room = rooms[currentRoom];
+    if (!room) return;
+    if (playerIdx !== room.hostIdx) return socket.emit('room-error', '방장만 COM을 추가/제거할 수 있습니다.');
+    if (room.game?.started) return;
+
+    const { team, slot } = data;
+    if (team !== 'A' && team !== 'B') return;
+
+    const mode = room.mode || '2v2';
+    const maxPerTeam = mode === '1v1' ? 1 : 2;
+
+    // Find COM players in this team
+    const teamPlayers = [];
+    room.players.forEach((p, i) => {
+      if (p && p.team === team) teamPlayers.push({ player: p, idx: i });
+    });
+
+    // Check if there's a COM in this team to remove
+    const comInTeam = teamPlayers.find(tp => tp.player.isCOM);
+    if (comInTeam) {
+      // Remove COM
+      room.players[comInTeam.idx] = null;
+      broadcastRoom(currentRoom);
+      return;
+    }
+
+    // Add COM if there's space
+    if (teamPlayers.length >= maxPerTeam) {
+      return socket.emit('room-error', '해당 팀이 가득 찼습니다.');
+    }
+
+    // Find empty slot
+    const emptyIdx = room.players.findIndex(p => p === null);
+    if (emptyIdx === -1) return socket.emit('room-error', '방이 가득 찼습니다.');
+
+    room.players[emptyIdx] = {
+      id: 'COM_' + Math.random().toString(36).substr(2, 6),
+      pid: 'COM_' + Date.now(),
+      name: 'COM',
+      team: team,
+      ready: true,
+      connected: true,
+      isCOM: true
+    };
+
+    broadcastRoom(currentRoom);
+  });
 
   // === PLAYER CHAT ===
   socket.on('chat-message', (data) => {
@@ -677,8 +988,8 @@ io.on('connection', (socket) => {
       broadcastRoom(currentRoom);
 
       setTimeout(() => {
-        const allPlayersGone = room.players.every(p => !p || !p.connected);
-        if (allPlayersGone) {
+        const allHumansGone = room.players.every(p => !p || p.isCOM || !p.connected);
+        if (allHumansGone) {
           delete rooms[currentRoom];
         }
       }, 60000);

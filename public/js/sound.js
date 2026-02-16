@@ -128,6 +128,35 @@ class SoundManager {
     this._tone(600 + Math.random() * 200, 0.05, 'sine', 0.1);
   }
 
+  // Emotional reaction sounds
+  reactionHappy() {
+    this.init();
+    this._tone(880, 0.08, 'sine', 0.15);
+    this._tone(1100, 0.08, 'sine', 0.18, 0.06);
+    this._tone(1320, 0.15, 'sine', 0.2, 0.12);
+  }
+
+  reactionSad() {
+    this.init();
+    this._tone(440, 0.15, 'sine', 0.12);
+    this._tone(370, 0.15, 'sine', 0.1, 0.12);
+    this._tone(330, 0.25, 'sine', 0.08, 0.24);
+  }
+
+  // Chat typing sound (tick tick)
+  chatTick() {
+    this.init();
+    this._tone(1200 + Math.random() * 400, 0.03, 'sine', 0.06);
+    this._noise(0.02, 0.03);
+  }
+
+  // Chat message received
+  chatReceive() {
+    this.init();
+    this._tone(800, 0.04, 'sine', 0.1);
+    this._tone(1000, 0.06, 'sine', 0.08, 0.03);
+  }
+
   toggle() {
     this.enabled = !this.enabled;
     return this.enabled;

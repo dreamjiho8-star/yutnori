@@ -231,6 +231,58 @@ input[type="text"]:focus {
 .slot.ready { border-color: var(--success); background: #F0FFF4; }
 .slot.disconnected { opacity: 0.5; border-color: #ccc; }
 
+/* COM Buttons */
+.slot-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.slot-wrapper .slot {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.btn-com {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 2px solid var(--gold);
+  background: linear-gradient(135deg, #FFF8E1, #FFE082);
+  color: #8B6914;
+  font-weight: 800;
+  font-size: 0.72rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-com:hover {
+  background: linear-gradient(135deg, var(--gold), #B8860B);
+  color: white;
+  transform: scale(1.05);
+}
+
+.btn-com.com-active {
+  background: linear-gradient(135deg, #FF6B6B, #CC0000);
+  border-color: #CC0000;
+  color: white;
+}
+
+.btn-com.com-active:hover {
+  background: linear-gradient(135deg, #FF4444, #AA0000);
+}
+
+.slot.com-slot {
+  border-style: solid;
+  border-color: var(--gold);
+  background: #FFF8E1;
+  color: #8B6914;
+  font-weight: 700;
+}
+
 .team-select {
   display: flex;
   gap: 10px;
@@ -1020,6 +1072,36 @@ input[type="text"]:focus {
 .ai-chat-messages::-webkit-scrollbar { width: 3px; }
 .ai-chat-messages::-webkit-scrollbar-track { background: transparent; }
 .ai-chat-messages::-webkit-scrollbar-thumb { background: rgba(100, 180, 255, 0.15); border-radius: 2px; }
+
+/* --- Reaction Toast --- */
+.reaction-toast {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: linear-gradient(135deg, rgba(30, 15, 8, 0.95), rgba(50, 25, 12, 0.95));
+  border: 2px solid var(--gold);
+  border-radius: 16px;
+  padding: 14px 28px;
+  color: #FFF;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-family: 'Noto Sans KR', sans-serif;
+  z-index: 200;
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(212, 168, 67, 0.2);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  white-space: nowrap;
+  max-width: 90vw;
+  text-align: center;
+}
+
+.reaction-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
 
 /* --- Responsive --- */
 @media (max-width: 900px) {

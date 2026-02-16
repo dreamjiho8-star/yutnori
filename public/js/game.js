@@ -808,39 +808,69 @@ socket.on('room-update', (data) => {
 socket.on('game-started', () => {});
 
 socket.on('game-state', (state) => {
-  // Detect events from log for sound effects
+  // Detect events from log for sound effects + emotional reactions
   if (state.log.length > lastLogLength) {
     const newLogs = state.log.slice(lastLogLength);
+    const myTeam = getMyTeam();
+
     newLogs.forEach(entry => {
       if (entry.includes('💥')) {
         sfx.capture();
-        // Spawn particles at captured position
+        // Determine who captured whom
+        let capturedTeam = null;
         if (prevTokens) {
           for (const team of ['A', 'B']) {
             state.tokens[team].forEach((t, i) => {
               const prev = prevTokens[team]?.[i];
               if (prev && prev.pos >= 0 && t.pos === -1) {
+                capturedTeam = team;
                 const pos = boardPositions[prev.pos];
                 if (pos) spawnParticles(pos[0], pos[1], TEAM_COLORS[team].light, 30);
               }
             });
           }
         }
+        // Emotional reaction
+        if (capturedTeam === myTeam) {
+          const isStack = entry.match(/\((\d+)개\)/);
+          const count = isStack ? parseInt(isStack[1]) : 1;
+          showReactionToast(pickRandom(count > 1 ? REACTIONS.myStackCaptured : REACTIONS.myCaptured));
+          sfx.reactionSad();
+        } else {
+          const isStack = entry.match(/\((\d+)개\)/);
+          const count = isStack ? parseInt(isStack[1]) : 1;
+          showReactionToast(pickRandom(count > 1 ? REACTIONS.oppStackCaptured : REACTIONS.oppCaptured));
+          sfx.reactionHappy();
+          // COM taunt
+          const currentOrigIdx2 = playerOrder[state.currentPlayer];
+          if (playerNames[currentOrigIdx2]?.isCOM && capturedTeam === myTeam) {
+            setTimeout(() => showReactionToast(pickRandom(REACTIONS.comTaunt)), 1200);
+          }
+        }
       }
       if (entry.includes('📦')) sfx.stack();
       if (entry.includes('✅')) {
         sfx.finish();
-        // Particles for finish
+        // Determine which team finished
+        let finishedTeam = null;
         if (prevTokens) {
           for (const team of ['A', 'B']) {
             state.tokens[team].forEach((t, i) => {
               const prev = prevTokens[team]?.[i];
               if (prev && prev.pos >= 0 && t.pos === -2) {
+                finishedTeam = team;
                 const pos = boardPositions[prev.pos];
                 if (pos) spawnParticles(pos[0], pos[1], '#FFD700', 35);
               }
             });
           }
+        }
+        if (finishedTeam === myTeam) {
+          showReactionToast(pickRandom(REACTIONS.myFinished));
+          sfx.reactionHappy();
+        } else {
+          showReactionToast(pickRandom(REACTIONS.oppFinished));
+          sfx.reactionSad();
         }
       }
       if (entry.includes('🎯') && !entry.includes('보너스')) sfx.turnChange();
@@ -878,7 +908,8 @@ socket.on('game-state', (state) => {
   const turnInd = document.getElementById('turn-indicator');
   const turnPlayer = document.getElementById('turn-player');
   const pInfo = playerNames[currentOrigIdx];
-  turnPlayer.textContent = pInfo ? pInfo.name + (isMyTurn ? ' (나!)' : '') : '...';
+  const turnName = pInfo ? (pInfo.isCOM ? '🤖 COM' : pInfo.name) : '...';
+  turnPlayer.textContent = turnName + (isMyTurn ? ' (나!)' : '');
   turnInd.className = 'turn-indicator' + (isMyTurn ? ' my-turn' : '');
 
   renderPlayerList();
@@ -899,6 +930,15 @@ socket.on('game-state', (state) => {
 socket.on('yut-result', (data) => {
   sfx.throw();
   animateYutThrow(data.result);
+
+  // Emotional reactions for yut results
+  if (isMyTurn) {
+    if (data.result.extraTurn) {
+      setTimeout(() => showReactionToast(pickRandom(REACTIONS.yutOrMo)), 800);
+    } else if (data.result.value === -1) {
+      setTimeout(() => showReactionToast(pickRandom(REACTIONS.backdo)), 800);
+    }
+  }
 });
 
 socket.on('disconnect', () => {
@@ -922,10 +962,12 @@ function renderPlayerList() {
 
     const div = document.createElement('div');
     div.className = 'player-item' + (isCurrent ? ' current' : '');
+    const nameLabel = p.isCOM ? '🤖 COM' : p.name;
+    const meLabel = (!p.isCOM && origIdx === myPlayerIdx) ? ' (나)' : '';
     div.innerHTML = `
       <span class="team-dot team-${team}"></span>
-      <span>${p.name}${origIdx === myPlayerIdx ? ' (나)' : ''}</span>
-      ${!p.connected ? '<span style="color:#666">연결 끊김</span>' : ''}
+      <span>${nameLabel}${meLabel}</span>
+      ${!p.connected && !p.isCOM ? '<span style="color:#666">연결 끊김</span>' : ''}
     `;
     container.appendChild(div);
   });
@@ -1158,7 +1200,12 @@ gameChatInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) gameChatSend.click();
 });
 
+gameChatInput.addEventListener('input', () => {
+  sfx.chatTick();
+});
+
 socket.on('chat-message', (data) => {
+  sfx.chatReceive();
   addGameChatMsg(data.name, data.team, data.message);
 });
 
@@ -1256,6 +1303,10 @@ aiChatInput.addEventListener('keydown', (e) => {
   }
 });
 
+aiChatInput.addEventListener('input', () => {
+  sfx.chatTick();
+});
+
 document.querySelectorAll('.ai-quick-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     sendAiMessage(btn.dataset.q);
@@ -1273,6 +1324,100 @@ aiToggleBtn.addEventListener('click', () => {
   aiPanel.classList.add('mobile-open');
   aiToggleBtn.classList.add('hidden');
 });
+
+// ============================================
+// Emotional Game Reactions
+// ============================================
+const REACTIONS = {
+  myCaptured: [
+    '😭 ㅠㅠ 내 말이 잡혔어...',
+    '💔 아아악! 내 말!! ㅠㅠㅠ',
+    '😢 이건 너무하잖아...',
+    '😤 다음에 두고 봐!',
+    '🥺 왜 나만 잡는 건데...',
+    '😱 내 말이 집으로 돌아갔다고?!',
+    '😿 세상이 무너지는 소리가 들린다...',
+    '💀 여기서 이렇게 당하다니...',
+  ],
+  myStackCaptured: [
+    '😱😱😱 업힌 말이 다 잡혔어!! ㅠㅠㅠ',
+    '💀 말 뭉치가 통째로!!! 멘붕...',
+    '🤯 이건 진짜 최악이야...',
+    '😭😭 한방에 다 날아갔어...',
+  ],
+  oppCaptured: [
+    '😎 잡았다~! ㅋㅋㅋ',
+    '🎯 딱 걸렸어! 집으로 가~',
+    '😏 아이고 잡혔네? ㅋㅋ',
+    '🔥 ㅋㅋㅋ 시원하다!',
+    '💪 나이스! 잡기 성공!',
+    '😈 ㅋㅋ 꼼짝마!',
+    '🎉 딱 걸렸지~? ㅎㅎ',
+  ],
+  oppStackCaptured: [
+    '😎🔥 뭉텅이로 잡았다!! 대박!',
+    '💥💥 한방에 싹 다! ㅋㅋㅋㅋ',
+    '🤣 업힌 거 다 잡았어! 통쾌!',
+    '🎆 이건 신의 한 수!',
+  ],
+  oppFinished: [
+    '😨 상대 말이 완주했다...',
+    '😰 큰일났다... 빨리 따라잡아야 해!',
+    '😬 저쪽이 먼저 골인하고 있어...',
+    '🥶 서둘러야 해!',
+  ],
+  myFinished: [
+    '🎉 완주! 잘한다~!',
+    '🥳 골인!! ㅎㅎ',
+    '✨ 나이스! 완주 성공!',
+    '🏁 하나 들어갔다! 좋아!',
+  ],
+  yutOrMo: [
+    '🔥 추가 턴이다!!',
+    '😍 윷(모)!! 한 번 더!',
+    '💫 럭키~!',
+    '🎲 운이 좋은데? ㅎㅎ',
+  ],
+  backdo: [
+    '😅 빽도... 괜찮아 다음에 잘하면 돼!',
+    '🐌 빽도ㅋㅋ 한 칸 후퇴!',
+    '🤷 빽도가 나올 수도 있지 뭐~',
+  ],
+  comTaunt: [
+    '🤖 ㅋㅋ 이 정도는 기본이지~',
+    '🤖 COM님은 실수 안 해요~',
+    '🤖 인간... 승산이 있다고 생각해?',
+    '🤖 계산 완료. 이건 내가 이겼어.',
+    '🤖 아직도 이기려고? ㅋ',
+  ],
+  comSad: [
+    '🤖 이건 계산 밖이었는데...',
+    '🤖 에러 발생... 아 아니 그냥 운이 나빴어.',
+    '🤖 다음엔 안 당해!',
+  ],
+};
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function showReactionToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'reaction-toast';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.classList.add('show'), 10);
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 400);
+  }, 2500);
+}
+
+function getMyTeam() {
+  const myTurnIdx = playerOrder.indexOf(myPlayerIdx);
+  if (myTurnIdx === -1) return null;
+  return (myTurnIdx === 0 || myTurnIdx === 2) ? 'A' : 'B';
+}
 
 // ============================================
 // Init
