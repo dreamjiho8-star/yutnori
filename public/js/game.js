@@ -787,7 +787,7 @@ let selectedMoveIdx = null;
 let isMyTurn = false;
 let canThrow = true;
 let playerNames = [];
-let lastLogLength = 0;
+let lastLogTotal = 0;
 
 // ============================================
 // Socket Events
@@ -809,8 +809,11 @@ socket.on('game-started', () => {});
 
 socket.on('game-state', (state) => {
   // Detect events from log for sound effects + emotional reactions
-  if (state.log.length > lastLogLength) {
-    const newLogs = state.log.slice(lastLogLength);
+  // Use logTotal (full server log count) to correctly detect new entries
+  const logTotal = state.logTotal || state.log.length;
+  const newCount = logTotal - lastLogTotal;
+  if (newCount > 0) {
+    const newLogs = state.log.slice(-Math.min(newCount, state.log.length));
     const myTeam = getMyTeam();
 
     newLogs.forEach(entry => {
@@ -836,15 +839,20 @@ socket.on('game-state', (state) => {
           const count = isStack ? parseInt(isStack[1]) : 1;
           showReactionToast(pickRandom(count > 1 ? REACTIONS.myStackCaptured : REACTIONS.myCaptured));
           sfx.reactionSad();
-        } else {
+          // COM taunt when COM captures my piece
+          const currentOrigIdx2 = playerOrder[state.currentPlayer];
+          if (playerNames[currentOrigIdx2]?.isCOM) {
+            setTimeout(() => showReactionToast(pickRandom(REACTIONS.comTaunt)), 1500);
+          }
+        } else if (capturedTeam !== null) {
           const isStack = entry.match(/\((\d+)개\)/);
           const count = isStack ? parseInt(isStack[1]) : 1;
           showReactionToast(pickRandom(count > 1 ? REACTIONS.oppStackCaptured : REACTIONS.oppCaptured));
           sfx.reactionHappy();
-          // COM taunt
-          const currentOrigIdx2 = playerOrder[state.currentPlayer];
-          if (playerNames[currentOrigIdx2]?.isCOM && capturedTeam === myTeam) {
-            setTimeout(() => showReactionToast(pickRandom(REACTIONS.comTaunt)), 1200);
+          // COM sad when I capture COM's piece
+          const capturedPlayerIsCOM = playerNames.some(p => p && p.isCOM && p.team === capturedTeam);
+          if (capturedPlayerIsCOM) {
+            setTimeout(() => showReactionToast(pickRandom(REACTIONS.comSad)), 1500);
           }
         }
       }
@@ -868,14 +876,14 @@ socket.on('game-state', (state) => {
         if (finishedTeam === myTeam) {
           showReactionToast(pickRandom(REACTIONS.myFinished));
           sfx.reactionHappy();
-        } else {
+        } else if (finishedTeam !== null) {
           showReactionToast(pickRandom(REACTIONS.oppFinished));
           sfx.reactionSad();
         }
       }
       if (entry.includes('🎯') && !entry.includes('보너스')) sfx.turnChange();
     });
-    lastLogLength = state.log.length;
+    lastLogTotal = logTotal;
   }
 
   // Detect token movement for step animation
@@ -1196,12 +1204,15 @@ gameChatSend.addEventListener('click', () => {
   gameChatInput.value = '';
 });
 
-gameChatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.isComposing) gameChatSend.click();
-});
-
-gameChatInput.addEventListener('input', () => {
+gameChatSend.addEventListener('click', () => {
   sfx.chatTick();
+}, true);
+
+gameChatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.isComposing) {
+    sfx.chatTick();
+    gameChatSend.click();
+  }
 });
 
 socket.on('chat-message', (data) => {
@@ -1298,13 +1309,10 @@ aiChatSend.addEventListener('click', () => {
 
 aiChatInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {
+    sfx.chatTick();
     sendAiMessage(aiChatInput.value);
     aiChatInput.value = '';
   }
-});
-
-aiChatInput.addEventListener('input', () => {
-  sfx.chatTick();
 });
 
 document.querySelectorAll('.ai-quick-btn').forEach(btn => {

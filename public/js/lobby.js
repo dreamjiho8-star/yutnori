@@ -209,6 +209,7 @@ function addLobbyChatMsg(name, team, message) {
 lobbyChatSend.addEventListener('click', () => {
   const msg = lobbyChatInput.value.trim();
   if (!msg) return;
+  if (typeof sfx !== 'undefined') sfx.chatTick();
   socket.emit('chat-message', { message: msg });
   lobbyChatInput.value = '';
 });
@@ -220,5 +221,6 @@ lobbyChatInput.addEventListener('keydown', (e) => {
 });
 
 socket.on('chat-message', (data) => {
+  if (typeof sfx !== 'undefined') sfx.chatReceive();
   addLobbyChatMsg(data.name, data.team, data.message);
 });

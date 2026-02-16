@@ -285,6 +285,7 @@ function broadcastGameState(roomCode) {
     pendingMoves: room.game.pendingMoves,
     throwPhase: room.game.throwPhase,
     log: room.game.log.slice(-20),
+    logTotal: room.game.log.length,
     winner: room.game.winner
   });
 }
