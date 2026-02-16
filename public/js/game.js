@@ -1105,6 +1105,116 @@ canvas.addEventListener('click', (e) => {
 });
 
 // ============================================
+// AI Chat
+// ============================================
+function buildGameStateText() {
+  if (!gameState) return '게임이 아직 시작되지 않았습니다.';
+  const curTeam = (gameState.currentPlayer === 0 || gameState.currentPlayer === 2) ? 'A' : 'B';
+  let text = `현재 차례: 팀 ${curTeam}\n`;
+  text += `사용 가능한 이동: ${gameState.pendingMoves.map(m => `${m.name}(${m.value})`).join(', ') || '없음'}\n`;
+  text += gameState.throwPhase ? '상태: 던지기 단계\n' : '상태: 말 이동 단계\n';
+
+  ['A', 'B'].forEach(t => {
+    text += `\n팀 ${t}:\n`;
+    const finished = gameState.tokens[t].filter(tk => tk.pos === -2).length;
+    text += `  완주: ${finished}/4\n`;
+    gameState.tokens[t].forEach((tok, i) => {
+      let posStr;
+      if (tok.pos === -1) posStr = '대기(홈)';
+      else if (tok.pos === -2) posStr = '완주';
+      else if (tok.pos === -3) posStr = `업힘(말${tok.carriedBy + 1}에)`;
+      else {
+        posStr = `위치${tok.pos}`;
+        if (tok.route !== 'main') posStr += `(${tok.route})`;
+      }
+      if (tok.stacked > 1) posStr += ` [${tok.stacked}개 업힘]`;
+      text += `  말${i + 1}: ${posStr}\n`;
+    });
+  });
+
+  if (gameState.log?.length) {
+    text += `\n최근 로그:\n`;
+    gameState.log.slice(-5).forEach(l => { text += `  ${l}\n`; });
+  }
+  return text;
+}
+
+const aiChatMessages = document.getElementById('ai-chat-messages');
+const aiChatInput = document.getElementById('ai-chat-input');
+const aiChatSend = document.getElementById('ai-chat-send');
+const aiPanel = document.getElementById('ai-chat-panel');
+const aiToggleBtn = document.getElementById('ai-toggle-btn');
+let aiSending = false;
+
+function addAiMessage(text, isUser) {
+  const div = document.createElement('div');
+  div.className = `ai-msg ${isUser ? 'ai-msg-user' : 'ai-msg-bot'}`;
+  div.textContent = text;
+  aiChatMessages.appendChild(div);
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+  return div;
+}
+
+async function sendAiMessage(message) {
+  if (aiSending || !message.trim()) return;
+  aiSending = true;
+  aiChatSend.disabled = true;
+
+  addAiMessage(message, true);
+  const loadingDiv = addAiMessage('생각 중...', false);
+  loadingDiv.classList.add('ai-msg-loading');
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        gameState: buildGameStateText()
+      })
+    });
+    const data = await res.json();
+    loadingDiv.textContent = data.reply || 'AI 응답 오류';
+    loadingDiv.classList.remove('ai-msg-loading');
+  } catch (err) {
+    loadingDiv.textContent = '서버 연결 오류';
+    loadingDiv.classList.remove('ai-msg-loading');
+  }
+
+  aiSending = false;
+  aiChatSend.disabled = false;
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+}
+
+aiChatSend.addEventListener('click', () => {
+  sendAiMessage(aiChatInput.value);
+  aiChatInput.value = '';
+});
+
+aiChatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    sendAiMessage(aiChatInput.value);
+    aiChatInput.value = '';
+  }
+});
+
+document.querySelectorAll('.ai-quick-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    sendAiMessage(btn.dataset.q);
+  });
+});
+
+document.getElementById('btn-toggle-ai').addEventListener('click', () => {
+  aiPanel.style.display = 'none';
+  aiToggleBtn.classList.remove('hidden');
+});
+
+aiToggleBtn.addEventListener('click', () => {
+  aiPanel.style.display = 'flex';
+  aiToggleBtn.classList.add('hidden');
+});
+
+// ============================================
 // Init
 // ============================================
 render();

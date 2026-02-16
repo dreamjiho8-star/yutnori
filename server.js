@@ -11,6 +11,50 @@ const io = new Server(server, {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+
+// === AI Chat Proxy (Groq API) ===
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message, gameState } = req.body;
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) return res.json({ reply: 'AI 기능을 사용하려면 GROQ_API_KEY 환경변수를 설정하세요. (groq.com에서 무료 발급)' });
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          {
+            role: 'system',
+            content: `너는 윷놀이 전문 AI 조언자야. 플레이어에게 전략적 조언을 한국어로 짧고 명확하게 해줘 (2-3문장).
+게임 규칙: 윷놀이는 4개의 말을 출발→완주시키는 보드게임. 도(1칸), 개(2칸), 걸(3칸), 윷(4칸,추가턴), 모(5칸,추가턴), 빽도(-1칸). 상대 말을 잡으면 추가턴. 꼭짓점(5,10,15)에서 대각선 숏컷 가능. 말 업기(같은 위치 아군)로 함께 이동 가능.
+
+현재 게임 상황:
+${gameState}`
+          },
+          { role: 'user', content: message }
+        ],
+        temperature: 0.7,
+        max_tokens: 200,
+      }),
+    });
+
+    const data = await response.json();
+    if (data.choices?.[0]?.message?.content) {
+      res.json({ reply: data.choices[0].message.content });
+    } else {
+      res.json({ reply: 'AI 응답을 받지 못했습니다.' });
+    }
+  } catch (err) {
+    console.error('AI chat error:', err);
+    res.json({ reply: 'AI 서비스에 일시적 오류가 발생했습니다.' });
+  }
+});
 
 const rooms = {};
 
