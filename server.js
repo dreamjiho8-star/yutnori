@@ -111,6 +111,10 @@ function computeMove(token, steps) {
       let backPos = path[idx - 1];
       // Going back to 출발(0) = completed the circuit → use pos 20
       if (backPos === 0) backPos = 20;
+      // Landing on center via backdo: switch to center route
+      if (backPos === 24) {
+        return { newPos: 24, newRoute: 'center', finished: false, prevRoute: route };
+      }
       return { newPos: backPos, newRoute: route, finished: false };
     }
     // At start of shortcut or pos 0: fall back to main path
