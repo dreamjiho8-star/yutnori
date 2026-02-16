@@ -1013,7 +1013,7 @@ function renderPlayerList() {
     div.innerHTML = `
       <span class="team-dot team-${team}"></span>
       <span>${nameLabel}${meLabel}</span>
-      ${!p.connected && !p.isCOM ? '<span style="color:#666">연결 끊김</span>' : ''}
+      ${p.connected === false && !p.isCOM ? '<span style="color:#666">연결 끊김</span>' : ''}
     `;
     container.appendChild(div);
   });
@@ -1030,6 +1030,11 @@ function renderPendingMoves(moves) {
     return;
   }
 
+  // Auto-select if only one move available
+  if (moves.length === 1 && selectedMoveIdx === null) {
+    selectedMoveIdx = 0;
+  }
+
   moves.forEach((m, i) => {
     const btn = document.createElement('button');
     btn.className = 'pending-move-btn' + (selectedMoveIdx === i ? ' selected' : '');
@@ -1043,6 +1048,11 @@ function renderPendingMoves(moves) {
     };
     container.appendChild(btn);
   });
+
+  // Trigger token select rendering if auto-selected
+  if (moves.length === 1) {
+    renderTokenSelect();
+  }
 }
 
 function renderTokenSelect() {
@@ -1064,6 +1074,27 @@ function renderTokenSelect() {
   if (!move) { area.classList.add('hidden'); return; }
   let anyMoveable = false;
 
+  const moveableTokens = [];
+  tokens.forEach((t, i) => {
+    if (t.pos === -3) return; // carried token - skip
+    const canMove = t.pos !== -2 && !(t.pos === -1 && move.value === -1);
+    if (canMove) moveableTokens.push(i);
+  });
+  anyMoveable = moveableTokens.length > 0;
+
+  // Auto-move if only one token can move (pick lowest numbered)
+  if (moveableTokens.length === 1) {
+    const autoIdx = moveableTokens[0];
+    const autoMoveIdx = selectedMoveIdx;
+    selectedMoveIdx = null;
+    area.classList.add('hidden');
+    setTimeout(() => {
+      sfx.move();
+      socket.emit('move-token', { tokenIdx: autoIdx, moveIdx: autoMoveIdx });
+    }, 300);
+    return;
+  }
+
   tokens.forEach((t, i) => {
     if (t.pos === -3) return; // carried token - skip
     const btn = document.createElement('button');
@@ -1074,9 +1105,8 @@ function renderTokenSelect() {
     else if (t.pos === -2) label += ' ✓';
 
     btn.textContent = label;
-    const canMove = t.pos !== -2 && !(t.pos === -1 && move.value === -1);
+    const canMove = moveableTokens.includes(i);
     btn.disabled = !canMove;
-    if (canMove) anyMoveable = true;
 
     btn.onclick = () => {
       sfx.move();

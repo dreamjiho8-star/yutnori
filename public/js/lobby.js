@@ -103,6 +103,11 @@ btnReady.addEventListener('click', () => socket.emit('player-ready'));
 btnStart.addEventListener('click', () => socket.emit('start-game'));
 
 socket.on('room-update', (data) => {
+  // Update host status dynamically
+  isHost = data.hostIdx === myPlayerIdx;
+  if (isHost) btnStart.classList.remove('hidden');
+  else btnStart.classList.add('hidden');
+
   const mode = data.mode || '2v2';
   const ppt = getPlayersPerTeam(mode);
   const slotsA = document.getElementById('slots-a');

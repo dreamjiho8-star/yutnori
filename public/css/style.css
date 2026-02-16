@@ -598,17 +598,22 @@ input[type="text"]:focus {
 }
 
 /* Player List */
+#player-list {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
 .player-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  margin-bottom: 5px;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  margin-bottom: 3px;
   background: rgba(255,255,255,0.02);
   transition: all 0.3s;
   color: var(--text-cream);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
 }
 
 .player-item.current {

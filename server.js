@@ -540,7 +540,10 @@ function scheduleCOMTurn(roomCode) {
           if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
             const capturedCount = captureStack(oppTokens, i);
             room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
-            room2.game.captureBonus = true;
+            // 윷/모로 잡으면 보너스 없음
+            if (move.value !== 4 && move.value !== 5) {
+              room2.game.captureBonus = true;
+            }
           }
         }
 
@@ -887,7 +890,10 @@ io.on('connection', (socket) => {
         if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
           const capturedCount = captureStack(oppTokens, i);
           room.game.log.push(`💥 ${playerName}이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
-          room.game.captureBonus = true;
+          // 윷/모로 잡으면 보너스 없음 (이미 추가 턴 있으므로)
+          if (move.value !== 4 && move.value !== 5) {
+            room.game.captureBonus = true;
+          }
         }
       }
 
