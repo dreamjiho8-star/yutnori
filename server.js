@@ -98,12 +98,19 @@ function computeMove(token, steps) {
     const path = getPathForToken(route);
     const idx = path.indexOf(pos);
     if (idx > 0) {
-      return { newPos: path[idx - 1], newRoute: route, finished: false };
+      let backPos = path[idx - 1];
+      // Going back to 출발(0) = completed the circuit → use pos 20
+      if (backPos === 0) backPos = 20;
+      return { newPos: backPos, newRoute: route, finished: false };
     }
     // At start of shortcut or pos 0: fall back to main path
     const mainPath = getPathForToken('main');
     const mi = mainPath.indexOf(pos);
-    if (mi > 0) return { newPos: mainPath[mi - 1], newRoute: 'main', finished: false };
+    if (mi > 0) {
+      let backPos = mainPath[mi - 1];
+      if (backPos === 0) backPos = 20;
+      return { newPos: backPos, newRoute: 'main', finished: false };
+    }
     if (mi === 0) return { newPos: -1, newRoute: 'main', finished: false };
     return null;
   }
