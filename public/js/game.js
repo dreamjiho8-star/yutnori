@@ -941,8 +941,10 @@ socket.on('yut-result', (data) => {
 
   // Emotional reactions for yut results
   if (isMyTurn) {
-    if (data.result.extraTurn) {
-      setTimeout(() => showReactionToast(pickRandom(REACTIONS.yutOrMo)), 800);
+    if (data.result.name === '윷') {
+      setTimeout(() => showReactionToast(pickRandom(REACTIONS.yut)), 800);
+    } else if (data.result.name === '모') {
+      setTimeout(() => showReactionToast(pickRandom(REACTIONS.mo)), 800);
     } else if (data.result.value === -1) {
       setTimeout(() => showReactionToast(pickRandom(REACTIONS.backdo)), 800);
     }
@@ -1380,11 +1382,19 @@ const REACTIONS = {
     '✨ 나이스! 완주 성공!',
     '🏁 하나 들어갔다! 좋아!',
   ],
-  yutOrMo: [
-    '🔥 추가 턴이다!!',
-    '😍 윷(모)!! 한 번 더!',
-    '💫 럭키~!',
-    '🎲 운이 좋은데? ㅎㅎ',
+  yut: [
+    '🔥 윷이다!! 한 번 더!',
+    '😍 윷~!! 추가 턴 가자!',
+    '💫 윷 나왔다! 럭키~!',
+    '🎲 윷! 운이 좋은데? ㅎㅎ',
+    '🎯 윷!! 이 기세 몰아가자!',
+  ],
+  mo: [
+    '🔥🔥 모다!! 5칸 + 한 번 더!',
+    '🤩 모!!! 대박 터졌다!!',
+    '💥 모 나왔다!! 미쳤어!',
+    '🎉 모!! 오늘 운 다 쓰는 거 아냐?!',
+    '😎 모~ 이건 못 참지 ㅋㅋ',
   ],
   backdo: [
     '😅 빽도... 괜찮아 다음에 잘하면 돼!',
