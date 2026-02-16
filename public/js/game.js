@@ -893,7 +893,12 @@ socket.on('game-state', (state) => {
         const prev = prevTokens[team]?.[i];
         if (!prev) return;
         if (prev.pos !== t.pos && prev.pos >= 0 && t.pos !== prev.pos) {
-          startStepAnimation(team, i, prev.pos, t.pos, prev.route);
+          // Skip animation for backdo to 출발(20) - looks like going full circle
+          if (prev.pos === 1 && t.pos === 20) {
+            // no animation, just teleport
+          } else {
+            startStepAnimation(team, i, prev.pos, t.pos, prev.route);
+          }
         } else if (prev.pos === -1 && t.pos >= 0) {
           startStepAnimation(team, i, -1, t.pos, 'main');
         }
