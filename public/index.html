@@ -23,8 +23,11 @@
     <div class="card" id="mode-card">
       <label>게임 모드</label>
       <div class="mode-select">
-        <button class="btn btn-mode active" id="btn-mode-1v1" data-mode="1v1">🎯 1 vs 1</button>
-        <button class="btn btn-mode" id="btn-mode-2v2" data-mode="2v2">👥 2 vs 2</button>
+        <button class="btn btn-mode active" data-mode="1v1">🎯 1v1</button>
+        <button class="btn btn-mode" data-mode="2v2">👥 2v2</button>
+        <button class="btn btn-mode" data-mode="3v3">⚔️ 3v3</button>
+        <button class="btn btn-mode" data-mode="4v4">🏰 4v4</button>
+        <button class="btn btn-mode" data-mode="5v5">🔥 5v5</button>
       </div>
     </div>
 
@@ -47,26 +50,12 @@
       <div class="team-area">
         <div class="team-column team-a">
           <h3>🔵 팀 A</h3>
-          <div class="slot-wrapper">
-            <div class="slot" id="slot-a1">비어있음</div>
-            <button class="btn-com hidden" id="btn-com-a1" title="COM 추가/제거">+COM</button>
-          </div>
-          <div class="slot-wrapper">
-            <div class="slot" id="slot-a2">비어있음</div>
-            <button class="btn-com hidden" id="btn-com-a2" title="COM 추가/제거">+COM</button>
-          </div>
+          <div id="slots-a"></div>
         </div>
         <div class="vs">VS</div>
         <div class="team-column team-b">
           <h3>🔴 팀 B</h3>
-          <div class="slot-wrapper">
-            <div class="slot" id="slot-b1">비어있음</div>
-            <button class="btn-com hidden" id="btn-com-b1" title="COM 추가/제거">+COM</button>
-          </div>
-          <div class="slot-wrapper">
-            <div class="slot" id="slot-b2">비어있음</div>
-            <button class="btn-com hidden" id="btn-com-b2" title="COM 추가/제거">+COM</button>
-          </div>
+          <div id="slots-b"></div>
         </div>
       </div>
       <div class="team-select" id="team-select-area">

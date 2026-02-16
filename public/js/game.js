@@ -8,6 +8,18 @@ const myPlayerIdx = parseInt(sessionStorage.getItem('yut-player'));
 const playerOrder = JSON.parse(sessionStorage.getItem('yut-order') || '[]');
 const myName = sessionStorage.getItem('yut-name') || '플레이어';
 const myPlayerId = sessionStorage.getItem('yut-pid') || '';
+const gameMode = sessionStorage.getItem('yut-mode') || '2v2';
+let gamePlayers = JSON.parse(sessionStorage.getItem('yut-players') || 'null');
+let tokenCount = 4; // will be updated from server
+
+function getTeamForTurn(turnIdx) {
+  if (gamePlayers && playerOrder) {
+    const origIdx = playerOrder[turnIdx];
+    const p = gamePlayers[origIdx];
+    if (p) return p.team;
+  }
+  return turnIdx % 2 === 0 ? 'A' : 'B';
+}
 
 if (!roomCode) window.location.href = '/';
 
@@ -568,7 +580,9 @@ function drawHomeTokens(tokens) {
 
     tokens[team].forEach((t, i) => {
       if (t.pos !== -1) return;
-      const x = hx + count * 28 - 35;
+      const spacing = tokenCount <= 4 ? 28 : (tokenCount <= 6 ? 22 : 18);
+      const offset = (tokenCount <= 4 ? 35 : (tokenCount <= 6 ? 44 : 56));
+      const x = hx + count * spacing - offset;
       // Shadow
       ctx.beginPath();
       ctx.ellipse(x + 1, hy + 3, 12, 6, 0, 0, Math.PI * 2);
@@ -610,16 +624,16 @@ function drawHomeTokens(tokens) {
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.font = 'bold 11px "Noto Sans KR", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`완주 ${finished}/4`, hx + 1, hy + 27);
+      ctx.fillText(`완주 ${finished}/${tokenCount}`, hx + 1, hy + 27);
       ctx.fillStyle = '#4ADE80';
-      ctx.fillText(`완주 ${finished}/4`, hx, hy + 26);
+      ctx.fillText(`완주 ${finished}/${tokenCount}`, hx, hy + 26);
     }
   }
 }
 
 function highlightMoveableTokens() {
   if (!gameState || selectedMoveIdx === null) return;
-  const team = (gameState.currentPlayer === 0 || gameState.currentPlayer === 2) ? 'A' : 'B';
+  const team = getTeamForTurn(gameState.currentPlayer);
   const tokens = gameState.tokens[team];
 
   tokens.forEach((t) => {
@@ -805,7 +819,15 @@ socket.on('room-update', (data) => {
   playerNames = data.players;
 });
 
-socket.on('game-started', () => {});
+socket.on('game-started', (data) => {
+  if (data.players) gamePlayers = data.players;
+  if (data.tokenCount) tokenCount = data.tokenCount;
+  if (data.playerOrder) {
+    // Update playerOrder in case of reconnection
+    playerOrder.length = 0;
+    data.playerOrder.forEach(v => playerOrder.push(v));
+  }
+});
 
 socket.on('game-state', (state) => {
   // Detect events from log for sound effects + emotional reactions
@@ -981,7 +1003,7 @@ function renderPlayerList() {
   playerOrder.forEach((origIdx, turnIdx) => {
     const p = playerNames[origIdx];
     if (!p) return;
-    const team = (turnIdx === 0 || turnIdx === 2) ? 'A' : 'B';
+    const team = getTeamForTurn(turnIdx);
     const isCurrent = gameState && gameState.currentPlayer === turnIdx;
 
     const div = document.createElement('div');
@@ -1036,7 +1058,7 @@ function renderTokenSelect() {
   }
 
   area.classList.remove('hidden');
-  const team = (gameState.currentPlayer === 0 || gameState.currentPlayer === 2) ? 'A' : 'B';
+  const team = getTeamForTurn(gameState.currentPlayer);
   const tokens = gameState.tokens[team];
   const move = gameState.pendingMoves[selectedMoveIdx];
   if (!move) { area.classList.add('hidden'); return; }
@@ -1145,7 +1167,7 @@ canvas.addEventListener('click', (e) => {
   const mx = (e.clientX - rect.left) * scaleX;
   const my = (e.clientY - rect.top) * scaleY;
 
-  const team = (gameState.currentPlayer === 0 || gameState.currentPlayer === 2) ? 'A' : 'B';
+  const team = getTeamForTurn(gameState.currentPlayer);
   const tokens = gameState.tokens[team];
 
   let closest = null;
@@ -1241,7 +1263,7 @@ socket.on('chat-message', (data) => {
 // ============================================
 function buildGameStateText() {
   if (!gameState) return '게임이 아직 시작되지 않았습니다.';
-  const curTeam = (gameState.currentPlayer === 0 || gameState.currentPlayer === 2) ? 'A' : 'B';
+  const curTeam = getTeamForTurn(gameState.currentPlayer);
   let text = `현재 차례: 팀 ${curTeam}\n`;
   text += `사용 가능한 이동: ${gameState.pendingMoves.map(m => `${m.name}(${m.value})`).join(', ') || '없음'}\n`;
   text += gameState.throwPhase ? '상태: 던지기 단계\n' : '상태: 말 이동 단계\n';
@@ -1448,7 +1470,7 @@ function showReactionToast(message) {
 function getMyTeam() {
   const myTurnIdx = playerOrder.indexOf(myPlayerIdx);
   if (myTurnIdx === -1) return null;
-  return (myTurnIdx === 0 || myTurnIdx === 2) ? 'A' : 'B';
+  return getTeamForTurn(myTurnIdx);
 }
 
 // ============================================

@@ -293,16 +293,17 @@ input[type="text"]:focus {
 .room-actions { display: flex; gap: 10px; }
 .room-actions .btn { flex: 1; }
 
-.mode-select { display: flex; gap: 10px; margin-top: 8px; }
+.mode-select { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 
 .btn-mode {
   flex: 1;
-  padding: 12px;
+  min-width: 60px;
+  padding: 10px 6px;
   border: 2px solid #d4a574;
   border-radius: 10px;
   background: #fff;
   color: #5c3d2e;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;

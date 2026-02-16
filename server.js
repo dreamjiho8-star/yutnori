@@ -248,24 +248,23 @@ function throwYut() {
   return results[flats];
 }
 
-function createGameState() {
+function getTokenCount(mode) {
+  const counts = { '1v1': 4, '2v2': 4, '3v3': 6, '4v4': 6, '5v5': 8 };
+  return counts[mode] || 4;
+}
+
+function getPlayersPerTeam(mode) {
+  const counts = { '1v1': 1, '2v2': 2, '3v3': 3, '4v4': 4, '5v5': 5 };
+  return counts[mode] || 2;
+}
+
+function createGameState(mode) {
+  const tokenCount = getTokenCount(mode || '2v2');
+  const makeTokens = () => Array.from({ length: tokenCount }, () => ({ pos: -1, route: 'main', stacked: 1, carriedBy: -1 }));
   return {
     started: false,
     currentPlayer: 0,
-    tokens: {
-      A: [
-        { pos: -1, route: 'main', stacked: 1, carriedBy: -1 },
-        { pos: -1, route: 'main', stacked: 1, carriedBy: -1 },
-        { pos: -1, route: 'main', stacked: 1, carriedBy: -1 },
-        { pos: -1, route: 'main', stacked: 1, carriedBy: -1 },
-      ],
-      B: [
-        { pos: -1, route: 'main', stacked: 1, carriedBy: -1 },
-        { pos: -1, route: 'main', stacked: 1, carriedBy: -1 },
-        { pos: -1, route: 'main', stacked: 1, carriedBy: -1 },
-        { pos: -1, route: 'main', stacked: 1, carriedBy: -1 },
-      ]
-    },
+    tokens: { A: makeTokens(), B: makeTokens() },
     pendingMoves: [],
     throwPhase: true,
     captureBonus: false,
@@ -274,8 +273,16 @@ function createGameState() {
   };
 }
 
-function getTeamForPlayer(playerIdx) {
-  return (playerIdx === 0 || playerIdx === 2) ? 'A' : 'B';
+function getTeamForPlayer(turnIdx, room) {
+  // turnIdx is the currentPlayer index (0-based turn order)
+  // Uses playerOrder to find the original player index, then gets their team
+  if (room && room.playerOrder && room.players) {
+    const origIdx = room.playerOrder[turnIdx];
+    const player = room.players[origIdx];
+    if (player) return player.team;
+  }
+  // Fallback for legacy: even=A, odd=B
+  return turnIdx % 2 === 0 ? 'A' : 'B';
 }
 
 function checkWin(tokens) {
@@ -423,7 +430,7 @@ function scheduleCOMTurn(roomCode) {
   if (room.game._comScheduled) return;
   room.game._comScheduled = true;
 
-  const team = getTeamForPlayer(room.game.currentPlayer);
+  const team = getTeamForPlayer(room.game.currentPlayer, room);
 
   if (room.game.throwPhase) {
     // COM throws yut after a delay
@@ -464,7 +471,7 @@ function scheduleCOMTurn(roomCode) {
       if (room2.game.throwPhase) return;
       if (room2.game.pendingMoves.length === 0) return;
 
-      const team2 = getTeamForPlayer(room2.game.currentPlayer);
+      const team2 = getTeamForPlayer(room2.game.currentPlayer, room2);
 
       // Try to find a skipable move first if needed
       const skipIdx = comFindSkippableMove(room2.game, team2);
@@ -593,7 +600,8 @@ io.on('connection', (socket) => {
     do { code = generateRoomCode(); } while (rooms[code]);
 
     const mode = data.mode || '2v2';
-    const maxPlayers = mode === '1v1' ? 2 : 4;
+    const ppt = getPlayersPerTeam(mode);
+    const maxPlayers = ppt * 2;
 
     rooms[code] = {
       players: new Array(maxPlayers).fill(null),
@@ -636,7 +644,12 @@ io.on('connection', (socket) => {
         playerIdx = reconnIdx;
         socket.join(code);
         socket.emit('room-joined', { roomCode: code, playerIdx: reconnIdx });
-        io.to(code).emit('game-started', { playerOrder: room.playerOrder, mode: room.mode });
+        io.to(code).emit('game-started', {
+          playerOrder: room.playerOrder,
+          mode: room.mode,
+          tokenCount: getTokenCount(room.mode),
+          players: room.players.map(p => p ? { name: p.name, team: p.team, isCOM: !!p.isCOM } : null)
+        });
         broadcastRoom(code);
         broadcastGameState(code);
         return;
@@ -662,7 +675,7 @@ io.on('connection', (socket) => {
     }
 
     // Assign to team with fewer members (or A if tied)
-    const maxPerTeam = room.mode === '1v1' ? 1 : 2;
+    const maxPerTeam = getPlayersPerTeam(room.mode);
     const teamACount = room.players.filter(p => p && p.team === 'A').length;
     const teamBCount = room.players.filter(p => p && p.team === 'B').length;
     let assignTeam;
@@ -725,50 +738,37 @@ io.on('connection', (socket) => {
     const allReady = room.players.every(p => p && (p.ready || p.isCOM));
     if (!allReady) return socket.emit('room-error', '모든 플레이어가 준비되어야 합니다.');
 
-    if (mode === '1v1') {
-      const teamA = room.players.filter(p => p && p.team === 'A').length;
-      const teamB = room.players.filter(p => p && p.team === 'B').length;
-      if (teamA !== 1 || teamB !== 1) return socket.emit('room-error', '각 팀에 1명씩 필요합니다.');
+    const ppt = getPlayersPerTeam(mode);
+    const teamAPlayers = [];
+    const teamBPlayers = [];
+    room.players.forEach((p, i) => {
+      if (!p) return;
+      if (p.team === 'A') teamAPlayers.push({ ...p, origIdx: i });
+      else teamBPlayers.push({ ...p, origIdx: i });
+    });
 
-      const teamAPlayers = [];
-      const teamBPlayers = [];
-      room.players.forEach((p, i) => {
-        if (!p) return;
-        if (p.team === 'A') teamAPlayers.push({ ...p, origIdx: i });
-        else teamBPlayers.push({ ...p, origIdx: i });
-      });
-
-      const ordered = [teamAPlayers[0], teamBPlayers[0]];
-      room.playerOrder = ordered.map(p => p.origIdx);
-      room.game = createGameState();
-      room.game.started = true;
-      room.game.totalPlayers = 2;
-      room.game.log.push('🎮 1대1 게임이 시작되었습니다!');
-      room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
-
-    } else {
-      const teamA = room.players.filter(p => p && p.team === 'A').length;
-      const teamB = room.players.filter(p => p && p.team === 'B').length;
-      if (teamA !== 2 || teamB !== 2) return socket.emit('room-error', '각 팀에 2명씩 필요합니다.');
-
-      const teamAPlayers = [];
-      const teamBPlayers = [];
-      room.players.forEach((p, i) => {
-        if (!p) return;
-        if (p.team === 'A') teamAPlayers.push({ ...p, origIdx: i });
-        else teamBPlayers.push({ ...p, origIdx: i });
-      });
-
-      const ordered = [teamAPlayers[0], teamBPlayers[0], teamAPlayers[1], teamBPlayers[1]];
-      room.playerOrder = ordered.map(p => p.origIdx);
-      room.game = createGameState();
-      room.game.started = true;
-      room.game.totalPlayers = 4;
-      room.game.log.push('🎮 2대2 게임이 시작되었습니다!');
-      room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
+    if (teamAPlayers.length !== ppt || teamBPlayers.length !== ppt) {
+      return socket.emit('room-error', `각 팀에 ${ppt}명씩 필요합니다.`);
     }
 
-    io.to(currentRoom).emit('game-started', { playerOrder: room.playerOrder, mode: mode });
+    // Interleave: A1, B1, A2, B2, A3, B3, ...
+    const ordered = [];
+    for (let i = 0; i < ppt; i++) {
+      ordered.push(teamAPlayers[i], teamBPlayers[i]);
+    }
+    room.playerOrder = ordered.map(p => p.origIdx);
+    room.game = createGameState(mode);
+    room.game.started = true;
+    room.game.totalPlayers = ppt * 2;
+    room.game.log.push(`🎮 ${ppt}대${ppt} 게임이 시작되었습니다!`);
+    room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
+
+    io.to(currentRoom).emit('game-started', {
+      playerOrder: room.playerOrder,
+      mode: mode,
+      tokenCount: getTokenCount(mode),
+      players: room.players.map(p => p ? { name: p.name, team: p.team, isCOM: !!p.isCOM } : null)
+    });
     broadcastGameState(currentRoom);
 
     // If first player is COM, start their turn
@@ -841,10 +841,10 @@ io.on('connection', (socket) => {
 
     if (!data || typeof data.tokenIdx !== 'number' || typeof data.moveIdx !== 'number') return;
     const { tokenIdx, moveIdx } = data;
-    const team = getTeamForPlayer(room.game.currentPlayer);
+    const team = getTeamForPlayer(room.game.currentPlayer, room);
     const tokens = room.game.tokens[team];
 
-    if (tokenIdx < 0 || tokenIdx >= 4) return;
+    if (tokenIdx < 0 || tokenIdx >= tokens.length) return;
     if (moveIdx < 0 || moveIdx >= room.game.pendingMoves.length) return;
 
     const token = tokens[tokenIdx];
@@ -933,7 +933,7 @@ io.on('connection', (socket) => {
     if (moveIdx < 0 || moveIdx >= room.game.pendingMoves.length) return;
 
     // Validate: no token can use this move
-    const team = getTeamForPlayer(room.game.currentPlayer);
+    const team = getTeamForPlayer(room.game.currentPlayer, room);
     const tokens = room.game.tokens[team];
     const move = room.game.pendingMoves[moveIdx];
 
@@ -972,7 +972,7 @@ io.on('connection', (socket) => {
     if (team !== 'A' && team !== 'B') return;
 
     const mode = room.mode || '2v2';
-    const maxPerTeam = mode === '1v1' ? 1 : 2;
+    const maxPerTeam = getPlayersPerTeam(mode);
 
     // Find COM players in this team
     const teamPlayers = [];

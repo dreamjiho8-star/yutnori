@@ -45,6 +45,11 @@ function getName() {
   return nameInput.value.trim() || '플레이어';
 }
 
+function getPlayersPerTeam(mode) {
+  const counts = { '1v1': 1, '2v2': 2, '3v3': 3, '4v4': 4, '5v5': 5 };
+  return counts[mode] || 2;
+}
+
 btnCreate.addEventListener('click', () => {
   socket.emit('create-room', { name: getName(), mode: gameMode, pid: myPlayerId });
 });
@@ -97,92 +102,77 @@ btnTeamB.addEventListener('click', () => socket.emit('select-team', { team: 'B' 
 btnReady.addEventListener('click', () => socket.emit('player-ready'));
 btnStart.addEventListener('click', () => socket.emit('start-game'));
 
-// COM buttons
-document.getElementById('btn-com-a1').addEventListener('click', () => socket.emit('toggle-com', { team: 'A', slot: 0 }));
-document.getElementById('btn-com-a2').addEventListener('click', () => socket.emit('toggle-com', { team: 'A', slot: 1 }));
-document.getElementById('btn-com-b1').addEventListener('click', () => socket.emit('toggle-com', { team: 'B', slot: 0 }));
-document.getElementById('btn-com-b2').addEventListener('click', () => socket.emit('toggle-com', { team: 'B', slot: 1 }));
-
 socket.on('room-update', (data) => {
   const mode = data.mode || '2v2';
-  const slotA1 = document.getElementById('slot-a1');
-  const slotA2 = document.getElementById('slot-a2');
-  const slotB1 = document.getElementById('slot-b1');
-  const slotB2 = document.getElementById('slot-b2');
-  const comA1 = document.getElementById('btn-com-a1');
-  const comA2 = document.getElementById('btn-com-a2');
-  const comB1 = document.getElementById('btn-com-b1');
-  const comB2 = document.getElementById('btn-com-b2');
+  const ppt = getPlayersPerTeam(mode);
+  const slotsA = document.getElementById('slots-a');
+  const slotsB = document.getElementById('slots-b');
 
-  const slots = [slotA1, slotA2, slotB1, slotB2];
-  const comBtns = [comA1, comA2, comB1, comB2];
-
-  slots.forEach(s => {
-    s.textContent = '비어있음';
-    s.className = 'slot';
-  });
-  comBtns.forEach(b => {
-    b.classList.add('hidden');
-    b.textContent = '+COM';
-    b.classList.remove('com-active');
-  });
-
-  if (mode === '1v1') {
-    slotA2.parentElement.style.display = 'none';
-    slotB2.parentElement.style.display = 'none';
-  } else {
-    slotA2.parentElement.style.display = '';
-    slotB2.parentElement.style.display = '';
-  }
-
-  // Track filled slots per team
-  const teamSlots = { A: [], B: [] };
-  let aIdx = 0, bIdx = 0;
+  // Collect players per team
+  const teamA = [];
+  const teamB = [];
   data.players.forEach((p, i) => {
     if (!p) return;
-    let slot, comBtn;
-    if (p.team === 'A') {
-      slot = aIdx === 0 ? slotA1 : slotA2;
-      comBtn = aIdx === 0 ? comA1 : comA2;
-      teamSlots.A.push({ slot, comBtn, player: p, idx: i });
-      aIdx++;
-    } else {
-      slot = bIdx === 0 ? slotB1 : slotB2;
-      comBtn = bIdx === 0 ? comB1 : comB2;
-      teamSlots.B.push({ slot, comBtn, player: p, idx: i });
-      bIdx++;
-    }
-
-    if (p.isCOM) {
-      slot.textContent = '🤖 COM';
-      slot.classList.add('filled', 'com-slot');
-      if (p.ready) slot.classList.add('ready');
-      // Show remove button for host
-      if (isHost) {
-        comBtn.classList.remove('hidden');
-        comBtn.textContent = '-COM';
-        comBtn.classList.add('com-active');
-      }
-    } else {
-      slot.textContent = p.name + (i === data.hostIdx ? ' 👑' : '') + (i === myPlayerIdx ? ' (나)' : '');
-      slot.classList.add('filled');
-      if (p.ready) slot.classList.add('ready');
-      if (!p.connected) slot.classList.add('disconnected');
-    }
+    if (p.team === 'A') teamA.push({ ...p, idx: i });
+    else teamB.push({ ...p, idx: i });
   });
 
-  // Show +COM buttons for empty slots (host only)
-  if (isHost) {
-    const maxPerTeam = mode === '1v1' ? 1 : 2;
-    if (teamSlots.A.length < maxPerTeam) {
-      const emptyComBtn = teamSlots.A.length === 0 ? comA1 : comA2;
-      emptyComBtn.classList.remove('hidden');
-    }
-    if (teamSlots.B.length < maxPerTeam) {
-      const emptyComBtn = teamSlots.B.length === 0 ? comB1 : comB2;
-      emptyComBtn.classList.remove('hidden');
+  // Render slots for a team
+  function renderTeamSlots(container, team, teamPlayers, ppt) {
+    container.innerHTML = '';
+    for (let s = 0; s < ppt; s++) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'slot-wrapper';
+
+      const slot = document.createElement('div');
+      slot.className = 'slot';
+
+      const p = teamPlayers[s];
+      if (p) {
+        if (p.isCOM) {
+          slot.textContent = '🤖 COM';
+          slot.classList.add('filled', 'com-slot');
+          if (p.ready) slot.classList.add('ready');
+          if (isHost) {
+            const comBtn = document.createElement('button');
+            comBtn.className = 'btn-com com-active';
+            comBtn.textContent = '-COM';
+            comBtn.addEventListener('click', () => socket.emit('toggle-com', { team, slot: s }));
+            wrapper.appendChild(slot);
+            wrapper.appendChild(comBtn);
+            container.appendChild(wrapper);
+            continue;
+          }
+        } else {
+          let label = p.name;
+          if (p.idx === data.hostIdx) label += ' 👑';
+          if (p.idx === myPlayerIdx) label += ' (나)';
+          slot.textContent = label;
+          slot.classList.add('filled');
+          if (p.ready) slot.classList.add('ready');
+          if (!p.connected) slot.classList.add('disconnected');
+        }
+      } else {
+        slot.textContent = '비어있음';
+        if (isHost) {
+          const comBtn = document.createElement('button');
+          comBtn.className = 'btn-com';
+          comBtn.textContent = '+COM';
+          comBtn.addEventListener('click', () => socket.emit('toggle-com', { team, slot: s }));
+          wrapper.appendChild(slot);
+          wrapper.appendChild(comBtn);
+          container.appendChild(wrapper);
+          continue;
+        }
+      }
+
+      wrapper.appendChild(slot);
+      container.appendChild(wrapper);
     }
   }
+
+  renderTeamSlots(slotsA, 'A', teamA, ppt);
+  renderTeamSlots(slotsB, 'B', teamB, ppt);
 });
 
 socket.on('game-started', (data) => {
@@ -190,6 +180,8 @@ socket.on('game-started', (data) => {
   sessionStorage.setItem('yut-player', myPlayerIdx);
   sessionStorage.setItem('yut-order', JSON.stringify(data.playerOrder));
   sessionStorage.setItem('yut-name', getName());
+  if (data.mode) sessionStorage.setItem('yut-mode', data.mode);
+  if (data.players) sessionStorage.setItem('yut-players', JSON.stringify(data.players));
   window.location.href = '/game.html';
 });
 
