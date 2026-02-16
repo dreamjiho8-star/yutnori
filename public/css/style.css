@@ -1186,3 +1186,27 @@ input[type="text"]:focus {
   }
   .ai-toggle-btn.hidden { display: none !important; }
 }
+
+/* === Credits Footer === */
+.credits-footer {
+  margin-top: 24px;
+  padding: 16px 0 8px;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-light);
+  opacity: 0.7;
+  letter-spacing: 0.3px;
+}
+.credits-footer .credits-divider {
+  margin: 0 8px;
+  opacity: 0.5;
+}
+.credits-footer-game {
+  margin-top: auto;
+  padding: 8px 0 4px;
+  text-align: center;
+  font-size: 0.68rem;
+  color: var(--text-light);
+  opacity: 0.5;
+  letter-spacing: 0.3px;
+}

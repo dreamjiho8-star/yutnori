@@ -419,159 +419,163 @@ function comFindSkippableMove(game, team) {
 }
 
 function scheduleCOMTurn(roomCode) {
-  const room = rooms[roomCode];
-  if (!room?.game?.started || room.game.winner) return;
+  try {
+    const room = rooms[roomCode];
+    if (!room?.game?.started || room.game.winner) return;
 
-  const currentPlayerOrigIdx = room.playerOrder[room.game.currentPlayer];
-  const currentPlayer = room.players[currentPlayerOrigIdx];
-  if (!currentPlayer?.isCOM) return;
+    const currentPlayerOrigIdx = room.playerOrder[room.game.currentPlayer];
+    const currentPlayer = room.players[currentPlayerOrigIdx];
+    if (!currentPlayer?.isCOM) return;
 
-  // Prevent duplicate COM scheduling
-  if (room.game._comScheduled) return;
-  room.game._comScheduled = true;
+    // Prevent duplicate COM scheduling
+    if (room.game._comScheduled) return;
+    room.game._comScheduled = true;
 
-  const team = getTeamForPlayer(room.game.currentPlayer, room);
+    const team = getTeamForPlayer(room.game.currentPlayer, room);
 
-  if (room.game.throwPhase) {
-    // COM throws yut after a delay
-    setTimeout(() => {
-      const room2 = rooms[roomCode];
-      if (!room2?.game?.started || room2.game.winner) return;
-      room2.game._comScheduled = false;
-      if (!room2.game.throwPhase) return;
+    if (room.game.throwPhase) {
+      // COM throws yut after a delay
+      setTimeout(() => { try {
+        const room2 = rooms[roomCode];
+        if (!room2?.game?.started || room2.game.winner) return;
+        room2.game._comScheduled = false;
+        if (!room2.game.throwPhase) return;
 
-      const result = throwYut();
-      room2.game.pendingMoves.push(result);
+        const result = throwYut();
+        room2.game.pendingMoves.push(result);
 
-      if (result.extraTurn) {
-        room2.game.throwPhase = true;
-      } else {
-        room2.game.throwPhase = false;
-      }
-
-      room2.game.log.push(`🎲 COM: ${result.name} (${result.value > 0 ? '+' : ''}${result.value})`);
-
-      io.to(roomCode).emit('yut-result', {
-        result,
-        canThrowAgain: result.extraTurn,
-        pendingMoves: room2.game.pendingMoves
-      });
-
-      broadcastGameState(roomCode);
-
-      // Continue COM turn
-      setTimeout(() => scheduleCOMTurn(roomCode), 800);
-    }, 1000);
-  } else {
-    // COM makes a move after a delay
-    setTimeout(() => {
-      const room2 = rooms[roomCode];
-      if (!room2?.game?.started || room2.game.winner) return;
-      room2.game._comScheduled = false;
-      if (room2.game.throwPhase) return;
-      if (room2.game.pendingMoves.length === 0) return;
-
-      const team2 = getTeamForPlayer(room2.game.currentPlayer, room2);
-
-      // Try to find a skipable move first if needed
-      const skipIdx = comFindSkippableMove(room2.game, team2);
-      const bestMove = comChooseBestMove(room2.game, team2);
-
-      if (!bestMove || bestMove.tokenIdx === undefined) {
-        // Skip
-        if (skipIdx >= 0) {
-          const move = room2.game.pendingMoves[skipIdx];
-          room2.game.pendingMoves.splice(skipIdx, 1);
-          room2.game.log.push(`⏭️ ${move.name} 건너뛰기`);
-
-          if (room2.game.pendingMoves.length === 0) {
-            advanceTurn(room2, roomCode);
-          }
-          broadcastGameState(roomCode);
-          setTimeout(() => scheduleCOMTurn(roomCode), 600);
+        if (result.extraTurn) {
+          room2.game.throwPhase = true;
+        } else {
+          room2.game.throwPhase = false;
         }
-        return;
-      }
 
-      // Execute the move
-      const { tokenIdx, moveIdx } = bestMove;
-      const tokens = room2.game.tokens[team2];
-      const token = tokens[tokenIdx];
-      const move = room2.game.pendingMoves[moveIdx];
+        room2.game.log.push(`🎲 COM: ${result.name} (${result.value > 0 ? '+' : ''}${result.value})`);
 
-      const result = computeMove(token, move.value);
-      if (!result) {
-        // Fallback: skip this move
-        if (skipIdx >= 0) {
-          const skipMove = room2.game.pendingMoves[skipIdx];
-          room2.game.pendingMoves.splice(skipIdx, 1);
-          room2.game.log.push(`⏭️ ${skipMove.name} 건너뛰기`);
-          if (room2.game.pendingMoves.length === 0) {
-            advanceTurn(room2, roomCode);
+        io.to(roomCode).emit('yut-result', {
+          result,
+          canThrowAgain: result.extraTurn,
+          pendingMoves: room2.game.pendingMoves
+        });
+
+        broadcastGameState(roomCode);
+
+        // Continue COM turn
+        setTimeout(() => scheduleCOMTurn(roomCode), 800);
+      } catch(err) { console.error('COM throw error:', err); } }, 1000);
+    } else {
+      // COM makes a move after a delay
+      setTimeout(() => { try {
+        const room2 = rooms[roomCode];
+        if (!room2?.game?.started || room2.game.winner) return;
+        room2.game._comScheduled = false;
+        if (room2.game.throwPhase) return;
+        if (room2.game.pendingMoves.length === 0) return;
+
+        const team2 = getTeamForPlayer(room2.game.currentPlayer, room2);
+
+        // Try to find a skipable move first if needed
+        const skipIdx = comFindSkippableMove(room2.game, team2);
+        const bestMove = comChooseBestMove(room2.game, team2);
+
+        if (!bestMove || bestMove.tokenIdx === undefined) {
+          // Skip
+          if (skipIdx >= 0) {
+            const move = room2.game.pendingMoves[skipIdx];
+            room2.game.pendingMoves.splice(skipIdx, 1);
+            room2.game.log.push(`⏭️ ${move.name} 건너뛰기`);
+
+            if (room2.game.pendingMoves.length === 0) {
+              advanceTurn(room2, roomCode);
+            }
+            broadcastGameState(roomCode);
+            setTimeout(() => scheduleCOMTurn(roomCode), 600);
           }
-          broadcastGameState(roomCode);
-        }
-        setTimeout(() => scheduleCOMTurn(roomCode), 600);
-        return;
-      }
-
-      token.pos = result.newPos;
-      token.route = result.newRoute;
-      if (result.prevRoute) token.prevRoute = result.prevRoute;
-      room2.game.pendingMoves.splice(moveIdx, 1);
-
-      if (result.finished) {
-        const count = finishStack(tokens, tokenIdx);
-        room2.game.log.push(`✅ COM의 말이 완주했습니다! (${count}개)`);
-
-        if (checkWin(tokens)) {
-          room2.game.winner = team2;
-          room2.game.log.push(`🏆 팀 ${team2} 승리!`);
-          io.to(roomCode).emit('game-over', { winner: team2 });
-          broadcastGameState(roomCode);
           return;
         }
-      } else if (token.pos >= 0) {
-        // Check capture
-        const oppTeam = team2 === 'A' ? 'B' : 'A';
-        const oppTokens = room2.game.tokens[oppTeam];
 
-        for (let i = 0; i < oppTokens.length; i++) {
-          if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
-            const capturedCount = captureStack(oppTokens, i);
-            room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
-            // 윷/모로 잡으면 보너스 없음
-            if (move.value !== 4 && move.value !== 5) {
-              room2.game.captureBonus = true;
+        // Execute the move
+        const { tokenIdx, moveIdx } = bestMove;
+        const tokens = room2.game.tokens[team2];
+        if (!tokens || !tokens[tokenIdx]) return;
+        const token = tokens[tokenIdx];
+        const move = room2.game.pendingMoves[moveIdx];
+        if (!move) return;
+
+        const result = computeMove(token, move.value);
+        if (!result) {
+          // Fallback: skip this move
+          if (skipIdx >= 0) {
+            const skipMove = room2.game.pendingMoves[skipIdx];
+            room2.game.pendingMoves.splice(skipIdx, 1);
+            room2.game.log.push(`⏭️ ${skipMove.name} 건너뛰기`);
+            if (room2.game.pendingMoves.length === 0) {
+              advanceTurn(room2, roomCode);
+            }
+            broadcastGameState(roomCode);
+          }
+          setTimeout(() => scheduleCOMTurn(roomCode), 600);
+          return;
+        }
+
+        token.pos = result.newPos;
+        token.route = result.newRoute;
+        if (result.prevRoute) token.prevRoute = result.prevRoute;
+        room2.game.pendingMoves.splice(moveIdx, 1);
+
+        if (result.finished) {
+          const count = finishStack(tokens, tokenIdx);
+          room2.game.log.push(`✅ COM의 말이 완주했습니다! (${count}개)`);
+
+          if (checkWin(tokens)) {
+            room2.game.winner = team2;
+            room2.game.log.push(`🏆 팀 ${team2} 승리!`);
+            io.to(roomCode).emit('game-over', { winner: team2 });
+            broadcastGameState(roomCode);
+            return;
+          }
+        } else if (token.pos >= 0) {
+          // Check capture
+          const oppTeam = team2 === 'A' ? 'B' : 'A';
+          const oppTokens = room2.game.tokens[oppTeam];
+
+          for (let i = 0; i < oppTokens.length; i++) {
+            if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
+              const capturedCount = captureStack(oppTokens, i);
+              room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+              // 윷/모로 잡으면 보너스 없음
+              if (move.value !== 4 && move.value !== 5) {
+                room2.game.captureBonus = true;
+              }
+            }
+          }
+
+          // Check stacking
+          for (let i = 0; i < tokens.length; i++) {
+            if (i !== tokenIdx && tokens[i].pos >= 0 && samePosition(tokens[i].pos, token.pos)) {
+              if (token.pos === 0 && tokens[i].pos === 20) {
+                token.pos = 20;
+                token.route = tokens[i].route;
+              }
+              stackTokens(tokens, tokenIdx, i);
+              room2.game.log.push(`📦 말을 업었습니다! (${token.stacked}개)`);
             }
           }
         }
 
-        // Check stacking
-        for (let i = 0; i < tokens.length; i++) {
-          if (i !== tokenIdx && tokens[i].pos >= 0 && samePosition(tokens[i].pos, token.pos)) {
-            if (token.pos === 0 && tokens[i].pos === 20) {
-              token.pos = 20;
-              token.route = tokens[i].route;
-            }
-            stackTokens(tokens, tokenIdx, i);
-            room2.game.log.push(`📦 말을 업었습니다! (${token.stacked}개)`);
-          }
+        room2.game.log.push(`➡️ COM: 말 ${tokenIdx + 1}을(를) ${move.name}(${move.value})만큼 이동`);
+
+        if (room2.game.pendingMoves.length === 0) {
+          advanceTurn(room2, roomCode);
         }
-      }
 
-      room2.game.log.push(`➡️ COM: 말 ${tokenIdx + 1}을(를) ${move.name}(${move.value})만큼 이동`);
+        broadcastGameState(roomCode);
 
-      if (room2.game.pendingMoves.length === 0) {
-        advanceTurn(room2, roomCode);
-      }
-
-      broadcastGameState(roomCode);
-
-      // Continue if COM has more moves or next turn is also COM
-      setTimeout(() => scheduleCOMTurn(roomCode), 800);
-    }, 1200);
-  }
+        // Continue if COM has more moves or next turn is also COM
+        setTimeout(() => scheduleCOMTurn(roomCode), 800);
+      } catch(err) { console.error('COM move error:', err); } }, 1200);
+    }
+  } catch(err) { console.error('scheduleCOMTurn error:', err); }
 }
 
 function advanceTurn(room, roomCode) {

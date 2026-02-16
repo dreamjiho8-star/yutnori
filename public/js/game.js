@@ -798,6 +798,7 @@ function requestRender() {
 let gameState = null;
 let prevTokens = null;
 let selectedMoveIdx = null;
+let _autoMoveScheduled = false;
 let isMyTurn = false;
 let canThrow = true;
 let playerNames = [];
@@ -1024,6 +1025,7 @@ function renderPendingMoves(moves) {
   container.innerHTML = '';
 
   if (!isMyTurn || moves.length === 0 || (gameState && gameState.throwPhase)) {
+    _autoMoveScheduled = false;
     if (!isMyTurn) container.textContent = '상대 차례입니다.';
     else if (gameState && gameState.throwPhase) container.textContent = '윷을 던지세요!';
     else container.textContent = '윷을 던지세요!';
@@ -1031,7 +1033,7 @@ function renderPendingMoves(moves) {
   }
 
   // Auto-select if only one move available
-  if (moves.length === 1 && selectedMoveIdx === null) {
+  if (moves.length === 1 && selectedMoveIdx === null && !_autoMoveScheduled) {
     selectedMoveIdx = 0;
   }
 
@@ -1050,7 +1052,7 @@ function renderPendingMoves(moves) {
   });
 
   // Trigger token select rendering if auto-selected
-  if (moves.length === 1) {
+  if (moves.length === 1 && !_autoMoveScheduled) {
     renderTokenSelect();
   }
 }
@@ -1083,14 +1085,29 @@ function renderTokenSelect() {
   anyMoveable = moveableTokens.length > 0;
 
   // Auto-move if only one token can move (pick lowest numbered)
-  if (moveableTokens.length === 1) {
+  if (moveableTokens.length === 1 && !_autoMoveScheduled) {
     const autoIdx = moveableTokens[0];
     const autoMoveIdx = selectedMoveIdx;
     selectedMoveIdx = null;
+    _autoMoveScheduled = true;
     area.classList.add('hidden');
     setTimeout(() => {
+      _autoMoveScheduled = false;
       sfx.move();
       socket.emit('move-token', { tokenIdx: autoIdx, moveIdx: autoMoveIdx });
+    }, 300);
+    return;
+  }
+
+  // Auto-skip if no token can move
+  if (!anyMoveable && !_autoMoveScheduled) {
+    const autoMoveIdx = selectedMoveIdx;
+    selectedMoveIdx = null;
+    _autoMoveScheduled = true;
+    area.classList.add('hidden');
+    setTimeout(() => {
+      _autoMoveScheduled = false;
+      socket.emit('skip-move', { moveIdx: autoMoveIdx });
     }, 300);
     return;
   }
