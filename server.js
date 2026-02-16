@@ -5,7 +5,10 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  pingTimeout: 60000,
+  pingInterval: 25000
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -80,13 +83,22 @@ function computeMove(token, steps) {
   const newIdx = startIdx + steps;
   let newRoute = route;
 
-  // Exact finish: exactly one step past the last position
-  if (newIdx === path.length) {
+  // Center (24) is a mandatory stop on shortcut paths
+  // If token would pass through center, stop at center instead
+  if (route === 'short5' || route === 'short10' || route === 'short15') {
+    const centerIdx = path.indexOf(24);
+    if (centerIdx !== -1 && startIdx < centerIdx && newIdx > centerIdx) {
+      return { newPos: 24, newRoute: route, finished: false };
+    }
+  }
+
+  // Finish: reach or pass the last position (overshoot counts as finish)
+  if (newIdx >= path.length) {
     return { newPos: -2, newRoute: route, finished: true };
   }
 
-  // Overshoot or invalid
-  if (newIdx >= path.length || newIdx < 0) {
+  // Invalid (negative)
+  if (newIdx < 0) {
     return null;
   }
 
@@ -192,6 +204,7 @@ function createGameState() {
     },
     pendingMoves: [],
     throwPhase: true,
+    captureBonus: false,
     log: [],
     winner: null
   };
@@ -410,7 +423,7 @@ io.on('connection', (socket) => {
   });
 
   // === THROW ===
-  socket.on('throw-yut', () => {
+  socket.on('throw-yut', () => { try {
     if (!currentRoom || playerIdx === null) return;
     const room = rooms[currentRoom];
     if (!room?.game?.started || room.game.winner) return;
@@ -431,7 +444,7 @@ io.on('connection', (socket) => {
       room.game.throwPhase = false;
     }
 
-    const playerName = room.players[playerIdx].name;
+    const playerName = room.players[playerIdx]?.name || '플레이어';
     room.game.log.push(`🎲 ${playerName}: ${result.name} (${result.value > 0 ? '+' : ''}${result.value})`);
 
     io.to(currentRoom).emit('yut-result', {
@@ -441,10 +454,10 @@ io.on('connection', (socket) => {
     });
 
     broadcastGameState(currentRoom);
-  });
+  } catch(err) { console.error('throw-yut error:', err); } });
 
   // === MOVE ===
-  socket.on('move-token', (data) => {
+  socket.on('move-token', (data) => { try {
     if (!currentRoom || playerIdx === null) return;
     const room = rooms[currentRoom];
     if (!room?.game?.started || room.game.winner) return;
@@ -455,6 +468,7 @@ io.on('connection', (socket) => {
     // Must be in move phase
     if (room.game.throwPhase) return;
 
+    if (!data || typeof data.tokenIdx !== 'number' || typeof data.moveIdx !== 'number') return;
     const { tokenIdx, moveIdx } = data;
     const team = getTeamForPlayer(room.game.currentPlayer);
     const tokens = room.game.tokens[team];
@@ -480,8 +494,6 @@ io.on('connection', (socket) => {
     // Remove used move
     room.game.pendingMoves.splice(moveIdx, 1);
 
-    let extraTurnFromCapture = false;
-
     if (result.finished) {
       // Finish this token and all carried tokens
       const count = finishStack(tokens, tokenIdx);
@@ -503,7 +515,7 @@ io.on('connection', (socket) => {
         if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
           const capturedCount = captureStack(oppTokens, i);
           room.game.log.push(`💥 ${playerName}이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
-          extraTurnFromCapture = true;
+          room.game.captureBonus = true;
         }
       }
 
@@ -525,24 +537,26 @@ io.on('connection', (socket) => {
 
     // Check if turn should advance
     if (room.game.pendingMoves.length === 0) {
-      if (extraTurnFromCapture) {
+      if (room.game.captureBonus) {
+        room.game.captureBonus = false;
         room.game.throwPhase = true;
         room.game.log.push(`🎯 잡기 보너스! ${playerName}님이 다시 던집니다.`);
       } else {
         const totalPlayers = room.game.totalPlayers || room.playerOrder.length;
         room.game.currentPlayer = (room.game.currentPlayer + 1) % totalPlayers;
+        room.game.captureBonus = false;
         room.game.throwPhase = true;
         const nextOrigIdx = room.playerOrder[room.game.currentPlayer];
-        const nextName = room.players[nextOrigIdx].name;
+        const nextName = room.players[nextOrigIdx]?.name || '플레이어';
         room.game.log.push(`🎯 ${nextName}님의 차례입니다.`);
       }
     }
 
     broadcastGameState(currentRoom);
-  });
+  } catch(err) { console.error('move-token error:', err); } });
 
   // === SKIP MOVE ===
-  socket.on('skip-move', (data) => {
+  socket.on('skip-move', (data) => { try {
     if (!currentRoom || playerIdx === null) return;
     const room = rooms[currentRoom];
     if (!room?.game?.started || room.game.winner) return;
@@ -571,19 +585,27 @@ io.on('connection', (socket) => {
     }
 
     room.game.pendingMoves.splice(moveIdx, 1);
+    const playerName = room.players[playerIdx]?.name || '플레이어';
     room.game.log.push(`⏭️ ${move.name} 건너뛰기`);
 
     if (room.game.pendingMoves.length === 0) {
-      const totalPlayers = room.game.totalPlayers || room.playerOrder.length;
-      room.game.currentPlayer = (room.game.currentPlayer + 1) % totalPlayers;
-      room.game.throwPhase = true;
-      const nextOrigIdx = room.playerOrder[room.game.currentPlayer];
-      const nextName = room.players[nextOrigIdx].name;
-      room.game.log.push(`🎯 ${nextName}님의 차례입니다.`);
+      if (room.game.captureBonus) {
+        room.game.captureBonus = false;
+        room.game.throwPhase = true;
+        room.game.log.push(`🎯 잡기 보너스! ${playerName}님이 다시 던집니다.`);
+      } else {
+        const totalPlayers = room.game.totalPlayers || room.playerOrder.length;
+        room.game.currentPlayer = (room.game.currentPlayer + 1) % totalPlayers;
+        room.game.captureBonus = false;
+        room.game.throwPhase = true;
+        const nextOrigIdx = room.playerOrder[room.game.currentPlayer];
+        const nextName = room.players[nextOrigIdx]?.name || '플레이어';
+        room.game.log.push(`🎯 ${nextName}님의 차례입니다.`);
+      }
     }
 
     broadcastGameState(currentRoom);
-  });
+  } catch(err) { console.error('skip-move error:', err); } });
 
   socket.on('disconnect', () => {
     if (!currentRoom) return;
@@ -603,6 +625,14 @@ io.on('connection', (socket) => {
       }, 60000);
     }
   });
+});
+
+// === Global Error Handlers (prevent server crash) ===
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
 });
 
 const PORT = process.env.PORT || 3000;
