@@ -8,6 +8,7 @@ const myPlayerIdx = parseInt(sessionStorage.getItem('yut-player'));
 const playerOrder = JSON.parse(sessionStorage.getItem('yut-order') || '[]');
 const myName = sessionStorage.getItem('yut-name') || '플레이어';
 const myPlayerId = sessionStorage.getItem('yut-pid') || '';
+const myReconnToken = sessionStorage.getItem('yut-reconnToken') || '';
 const gameMode = sessionStorage.getItem('yut-mode') || '2v2';
 let gamePlayers = JSON.parse(sessionStorage.getItem('yut-players') || 'null');
 let tokenCount = 4; // will be updated from server
@@ -27,7 +28,7 @@ let hasJoined = false;
 function joinRoom() {
   if (hasJoined) return;
   hasJoined = true;
-  socket.emit('join-room', { roomCode, name: myName, pid: myPlayerId });
+  socket.emit('join-room', { roomCode, name: myName, pid: myPlayerId, reconnToken: myReconnToken });
 }
 
 // ============================================
@@ -815,7 +816,8 @@ socket.on('connect', () => {
   joinRoom();
 });
 
-socket.on('room-joined', () => {
+socket.on('room-joined', (data) => {
+  if (data?.reconnToken) sessionStorage.setItem('yut-reconnToken', data.reconnToken);
   document.getElementById('disconnect-overlay').classList.add('hidden');
 });
 
@@ -1045,7 +1047,7 @@ function renderPlayerList() {
 
     const div = document.createElement('div');
     div.className = 'player-item' + (isCurrent ? ' current' : '');
-    const nameLabel = p.isCOM ? '🤖 COM' : p.name;
+    const nameLabel = p.isCOM ? '🤖 COM' : escapeHtml(p.name);
     const meLabel = (!p.isCOM && origIdx === myPlayerIdx) ? ' (나)' : '';
     div.innerHTML = `
       <span class="team-dot team-${team}"></span>
@@ -1387,10 +1389,18 @@ document.querySelectorAll('.log-chat-tab').forEach(tab => {
   });
 });
 
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 function addGameChatMsg(name, team, message) {
   const div = document.createElement('div');
   const color = team === 'A' ? '#4A8FE7' : '#E84118';
-  div.innerHTML = `<span style="color:${color}; font-weight:700;">${name}</span>: ${message}`;
+  const safeName = escapeHtml(name);
+  const safeMsg = escapeHtml(message);
+  div.innerHTML = `<span style="color:${color}; font-weight:700;">${safeName}</span>: ${safeMsg}`;
   gameChatMessages.appendChild(div);
   gameChatMessages.scrollTop = gameChatMessages.scrollHeight;
 

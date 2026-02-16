@@ -22,7 +22,9 @@ let gameMode = '1v1';
 // Generate or retrieve persistent player ID
 let myPlayerId = sessionStorage.getItem('yut-pid');
 if (!myPlayerId) {
-  myPlayerId = Math.random().toString(36).substr(2, 9);
+  const arr = new Uint8Array(12);
+  crypto.getRandomValues(arr);
+  myPlayerId = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
   sessionStorage.setItem('yut-pid', myPlayerId);
 }
 
@@ -57,7 +59,8 @@ btnCreate.addEventListener('click', () => {
 btnJoin.addEventListener('click', () => {
   const code = codeInput.value.trim().toUpperCase();
   if (code.length !== 4) return showError('4자리 방 코드를 입력하세요.');
-  socket.emit('join-room', { roomCode: code, name: getName(), pid: myPlayerId });
+  const reconnToken = sessionStorage.getItem('yut-reconnToken') || '';
+  socket.emit('join-room', { roomCode: code, name: getName(), pid: myPlayerId, reconnToken });
 });
 
 codeInput.addEventListener('keypress', (e) => {
@@ -67,6 +70,7 @@ codeInput.addEventListener('keypress', (e) => {
 socket.on('room-created', (data) => {
   roomCode = data.roomCode;
   myPlayerIdx = data.playerIdx;
+  if (data.reconnToken) sessionStorage.setItem('yut-reconnToken', data.reconnToken);
   isHost = true;
   showRoom();
 });
@@ -74,6 +78,7 @@ socket.on('room-created', (data) => {
 socket.on('room-joined', (data) => {
   roomCode = data.roomCode;
   myPlayerIdx = data.playerIdx;
+  if (data.reconnToken) sessionStorage.setItem('yut-reconnToken', data.reconnToken);
   isHost = false;
   showRoom();
 });
@@ -149,7 +154,7 @@ socket.on('room-update', (data) => {
             continue;
           }
         } else {
-          let label = p.name;
+          let label = (p.name || '').slice(0, 10);
           if (p.idx === data.hostIdx) label += ' 👑';
           if (p.idx === myPlayerIdx) label += ' (나)';
           slot.textContent = label;
@@ -195,10 +200,18 @@ const lobbyChatMessages = document.getElementById('lobby-chat-messages');
 const lobbyChatInput = document.getElementById('lobby-chat-input');
 const lobbyChatSend = document.getElementById('lobby-chat-send');
 
+function escapeHtml(str) {
+  const el = document.createElement('div');
+  el.textContent = str;
+  return el.innerHTML;
+}
+
 function addLobbyChatMsg(name, team, message) {
   const div = document.createElement('div');
   const color = team === 'A' ? '#1B3A6B' : '#C23616';
-  div.innerHTML = `<strong style="color:${color}">${name}</strong>: ${message}`;
+  const safeName = escapeHtml(name);
+  const safeMsg = escapeHtml(message);
+  div.innerHTML = `<strong style="color:${color}">${safeName}</strong>: ${safeMsg}`;
   lobbyChatMessages.appendChild(div);
   lobbyChatMessages.scrollTop = lobbyChatMessages.scrollHeight;
 }
@@ -230,5 +243,6 @@ if (rejoinCode) {
   window.history.replaceState({}, '', '/');
   const savedName = sessionStorage.getItem('yut-name') || '';
   if (savedName) nameInput.value = savedName;
-  socket.emit('join-room', { roomCode: rejoinCode, name: getName(), pid: myPlayerId });
+  const savedReconnToken = sessionStorage.getItem('yut-reconnToken') || '';
+  socket.emit('join-room', { roomCode: rejoinCode, name: getName(), pid: myPlayerId, reconnToken: savedReconnToken });
 }

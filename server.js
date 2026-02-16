@@ -3,21 +3,88 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
+
+// === CORS: 허용 오리진 설정 ===
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : undefined; // undefined = 개발 시 전체 허용, 배포 시 환경변수로 제한
+
 const io = new Server(server, {
   pingTimeout: 60000,
-  pingInterval: 25000
+  pingInterval: 25000,
+  cors: ALLOWED_ORIGINS ? { origin: ALLOWED_ORIGINS, methods: ['GET', 'POST'] } : undefined,
+  maxHttpBufferSize: 1e5, // 100KB 패킷 크기 제한
+});
+
+// === 보안 헤더 ===
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:");
+  next();
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json());
+app.use(express.json({ limit: '10kb' })); // body 크기 제한
+
+// === Rate Limiter (메모리 기반) ===
+const _rateLimits = {};
+function rateLimit(key, maxPerWindow, windowMs) {
+  const now = Date.now();
+  if (!_rateLimits[key]) _rateLimits[key] = [];
+  _rateLimits[key] = _rateLimits[key].filter(t => t > now - windowMs);
+  if (_rateLimits[key].length >= maxPerWindow) return false;
+  _rateLimits[key].push(now);
+  return true;
+}
+// rate limit 메모리 정리 (5분마다)
+setInterval(() => {
+  const now = Date.now();
+  for (const key of Object.keys(_rateLimits)) {
+    _rateLimits[key] = _rateLimits[key].filter(t => t > now - 60000);
+    if (_rateLimits[key].length === 0) delete _rateLimits[key];
+  }
+}, 300000);
+
+// === 입력 검증 헬퍼 ===
+function sanitizeName(name) {
+  if (typeof name !== 'string') return '플레이어';
+  // HTML 태그 제거, 제어문자 제거, 길이 제한
+  return name.replace(/<[^>]*>/g, '').replace(/[\x00-\x1F\x7F]/g, '').trim().slice(0, 10) || '플레이어';
+}
+
+function sanitizeMessage(msg) {
+  if (typeof msg !== 'string') return '';
+  return msg.replace(/[\x00-\x1F\x7F]/g, '').slice(0, 200);
+}
+
+function isValidRoomCode(code) {
+  return typeof code === 'string' && /^[A-Z2-9]{4}$/.test(code);
+}
+
+// === API Rate Limiting 미들웨어 ===
+function apiRateLimit(maxPerMinute) {
+  return (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    if (!rateLimit(`api:${ip}`, maxPerMinute, 60000)) {
+      return res.status(429).json({ reply: '요청이 너무 많습니다. 잠시 후 다시 시도하세요.' });
+    }
+    next();
+  };
+}
 
 // === AI Chat Proxy (Groq API) ===
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', apiRateLimit(10), async (req, res) => {
   try {
     const { message, gameState } = req.body;
+    if (typeof message !== 'string' || message.length > 500) return res.json({ reply: '메시지가 너무 깁니다.' });
+    if (typeof gameState !== 'string' || gameState.length > 5000) return res.json({ reply: '잘못된 요청입니다.' });
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) return res.json({ reply: 'AI 기능을 사용하려면 GROQ_API_KEY 환경변수를 설정하세요. (groq.com에서 무료 발급)' });
 
@@ -59,9 +126,11 @@ ${gameState}`
 });
 
 // === AI Auto-Advice (Proactive 훈수) ===
-app.post('/api/auto-advice', async (req, res) => {
+app.post('/api/auto-advice', apiRateLimit(15), async (req, res) => {
   try {
     const { gameState, event } = req.body;
+    if (typeof gameState !== 'string' || gameState.length > 5000) return res.json({ reply: '' });
+    if (typeof event !== 'string' || event.length > 200) return res.json({ reply: '' });
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) return res.json({ reply: '' });
 
@@ -272,8 +341,9 @@ function stackTokens(tokens, dstIdx, srcIdx) {
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(4);
   let code = '';
-  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 4; i++) code += chars[bytes[i] % chars.length];
   return code;
 }
 
@@ -648,12 +718,20 @@ function advanceTurn(room, roomCode) {
 io.on('connection', (socket) => {
   let currentRoom = null;
   let playerIdx = null;
+  const socketIp = socket.handshake.address;
+
+  // === 소켓 이벤트 rate limiting 헬퍼 ===
+  function socketRateCheck(event, max, windowMs) {
+    return rateLimit(`sock:${socketIp}:${event}`, max, windowMs || 10000);
+  }
 
   socket.on('create-room', (data) => {
+    if (!socketRateCheck('create', 3, 30000)) return;
+
     let code;
     do { code = generateRoomCode(); } while (rooms[code]);
 
-    const mode = data.mode || '2v2';
+    const mode = ['1v1','2v2','3v3','4v4','5v5'].includes(data.mode) ? data.mode : '2v2';
     const ppt = getPlayersPerTeam(mode);
     const maxPlayers = ppt * 2;
 
@@ -665,10 +743,12 @@ io.on('connection', (socket) => {
     };
 
     const idx = 0;
+    const reconnToken = crypto.randomBytes(16).toString('hex');
     rooms[code].players[idx] = {
       id: socket.id,
-      pid: data.pid || socket.id,
-      name: data.name || '플레이어',
+      pid: typeof data.pid === 'string' ? data.pid.slice(0, 20) : socket.id,
+      reconnToken,
+      name: sanitizeName(data.name),
       team: 'A',
       ready: false,
       connected: true
@@ -677,27 +757,31 @@ io.on('connection', (socket) => {
     currentRoom = code;
     playerIdx = idx;
     socket.join(code);
-    socket.emit('room-created', { roomCode: code, playerIdx: idx, mode: mode });
+    socket.emit('room-created', { roomCode: code, playerIdx: idx, mode: mode, reconnToken });
     broadcastRoom(code);
   });
 
   socket.on('join-room', (data) => {
-    const code = data.roomCode?.toUpperCase();
+    if (!socketRateCheck('join', 5, 10000)) return;
+
+    const code = typeof data.roomCode === 'string' ? data.roomCode.toUpperCase() : '';
+    if (!isValidRoomCode(code)) return socket.emit('room-error', '올바른 4자리 방 코드를 입력하세요.');
     const room = rooms[code];
     if (!room) return socket.emit('room-error', '존재하지 않는 방입니다.');
 
     if (room.game?.started) {
-      let reconnIdx = room.players.findIndex(p => p && data.pid && p.pid === data.pid);
-      if (reconnIdx === -1) {
-        reconnIdx = room.players.findIndex(p => p && p.name === data.name);
-      }
+      // 재연결: reconnToken으로만 검증 (name fallback 제거 - 세션 하이재킹 방지)
+      const reconnToken = typeof data.reconnToken === 'string' ? data.reconnToken : '';
+      let reconnIdx = reconnToken
+        ? room.players.findIndex(p => p && p.reconnToken && p.reconnToken === reconnToken)
+        : -1;
       if (reconnIdx !== -1) {
         room.players[reconnIdx].id = socket.id;
         room.players[reconnIdx].connected = true;
         currentRoom = code;
         playerIdx = reconnIdx;
         socket.join(code);
-        socket.emit('room-joined', { roomCode: code, playerIdx: reconnIdx });
+        socket.emit('room-joined', { roomCode: code, playerIdx: reconnIdx, reconnToken: room.players[reconnIdx].reconnToken });
         io.to(code).emit('game-started', {
           playerOrder: room.playerOrder,
           mode: room.mode,
@@ -711,14 +795,21 @@ io.on('connection', (socket) => {
       return socket.emit('room-error', '이미 진행 중인 게임입니다.');
     }
 
-    let existingIdx = room.players.findIndex(p => p && data.pid && p.pid === data.pid);
+    // 로비에서 재연결: reconnToken 우선, pid fallback
+    const reconnToken = typeof data.reconnToken === 'string' ? data.reconnToken : '';
+    let existingIdx = reconnToken
+      ? room.players.findIndex(p => p && p.reconnToken && p.reconnToken === reconnToken)
+      : -1;
+    if (existingIdx === -1) {
+      existingIdx = room.players.findIndex(p => p && data.pid && p.pid === data.pid);
+    }
     if (existingIdx !== -1) {
       room.players[existingIdx].id = socket.id;
       room.players[existingIdx].connected = true;
       currentRoom = code;
       playerIdx = existingIdx;
       socket.join(code);
-      socket.emit('room-joined', { roomCode: code, playerIdx: existingIdx });
+      socket.emit('room-joined', { roomCode: code, playerIdx: existingIdx, reconnToken: room.players[existingIdx].reconnToken });
       broadcastRoom(code);
       return;
     }
@@ -737,10 +828,12 @@ io.on('connection', (socket) => {
     else if (teamBCount < maxPerTeam) assignTeam = 'B';
     else assignTeam = 'A'; // fallback
 
+    const newReconnToken = crypto.randomBytes(16).toString('hex');
     room.players[idx] = {
       id: socket.id,
-      pid: data.pid || socket.id,
-      name: data.name || '플레이어',
+      pid: typeof data.pid === 'string' ? data.pid.slice(0, 20) : socket.id,
+      reconnToken: newReconnToken,
+      name: sanitizeName(data.name),
       team: assignTeam,
       ready: false,
       connected: true
@@ -749,7 +842,7 @@ io.on('connection', (socket) => {
     currentRoom = code;
     playerIdx = idx;
     socket.join(code);
-    socket.emit('room-joined', { roomCode: code, playerIdx: idx });
+    socket.emit('room-joined', { roomCode: code, playerIdx: idx, reconnToken: newReconnToken });
     broadcastRoom(code);
   });
 
@@ -850,6 +943,7 @@ io.on('connection', (socket) => {
   // === THROW ===
   socket.on('throw-yut', () => { try {
     if (!currentRoom || playerIdx === null) return;
+    if (!socketRateCheck('throw', 5, 3000)) return;
     const room = rooms[currentRoom];
     if (!room?.game?.started || room.game.winner) return;
 
@@ -884,8 +978,14 @@ io.on('connection', (socket) => {
   // === MOVE ===
   socket.on('move-token', (data) => { try {
     if (!currentRoom || playerIdx === null) return;
+    if (!socketRateCheck('move', 5, 3000)) return;
     const room = rooms[currentRoom];
     if (!room?.game?.started || room.game.winner) return;
+
+    // 이동 처리 중 중복 방지 lock
+    if (room.game._moveLock) return;
+    room.game._moveLock = true;
+    setTimeout(() => { if (room.game) room.game._moveLock = false; }, 200);
 
     const currentPlayerOrigIdx = room.playerOrder[room.game.currentPlayer];
     if (playerIdx !== currentPlayerOrigIdx) return;
@@ -894,6 +994,7 @@ io.on('connection', (socket) => {
     if (room.game.throwPhase) return;
 
     if (!data || typeof data.tokenIdx !== 'number' || typeof data.moveIdx !== 'number') return;
+    if (!Number.isInteger(data.tokenIdx) || !Number.isInteger(data.moveIdx)) return;
     const { tokenIdx, moveIdx } = data;
     const team = getTeamForPlayer(room.game.currentPlayer, room);
     const tokens = room.game.tokens[team];
@@ -978,6 +1079,7 @@ io.on('connection', (socket) => {
   // === SKIP MOVE ===
   socket.on('skip-move', (data) => { try {
     if (!currentRoom || playerIdx === null) return;
+    if (!socketRateCheck('skip', 5, 3000)) return;
     const room = rooms[currentRoom];
     if (!room?.game?.started || room.game.winner) return;
 
@@ -1020,6 +1122,7 @@ io.on('connection', (socket) => {
   // === COM PLAYER MANAGEMENT ===
   socket.on('toggle-com', (data) => {
     if (!currentRoom || playerIdx === null) return;
+    if (!socketRateCheck('com', 5, 5000)) return;
     const room = rooms[currentRoom];
     if (!room) return;
     if (playerIdx !== room.hostIdx) return socket.emit('room-error', '방장만 COM을 추가/제거할 수 있습니다.');
@@ -1056,7 +1159,7 @@ io.on('connection', (socket) => {
     if (emptyIdx === -1) return socket.emit('room-error', '방이 가득 찼습니다.');
 
     room.players[emptyIdx] = {
-      id: 'COM_' + Math.random().toString(36).substr(2, 6),
+      id: 'COM_' + crypto.randomBytes(4).toString('hex'),
       pid: 'COM_' + Date.now(),
       name: 'COM',
       team: team,
@@ -1071,11 +1174,12 @@ io.on('connection', (socket) => {
   // === PLAYER CHAT ===
   socket.on('chat-message', (data) => {
     if (!currentRoom || playerIdx === null) return;
+    if (!socketRateCheck('chat', 5, 5000)) return; // 5초에 5개까지
     const room = rooms[currentRoom];
     if (!room || !room.players[playerIdx]) return;
     const name = room.players[playerIdx].name || '플레이어';
     const team = room.players[playerIdx].team;
-    const msg = (data?.message || '').slice(0, 200);
+    const msg = sanitizeMessage(data?.message);
     if (!msg.trim()) return;
     io.to(currentRoom).emit('chat-message', { name, team, message: msg });
   });
