@@ -301,29 +301,26 @@ class TonEscrow {
     try {
       const roomCodeInt = this._activeGameIds.get(roomCode) || this._roomCodeToInt(roomCode);
 
-      try {
-        const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
-        const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
-        const gameData = await this._retry(() => contract.getGameData(roomCodeInt));
-        return gameData;
-      } catch (e) {
-        // Fallback: direct getter call, parse TupleReader into usable object
-        const result = await this._retry(() => this.client.runMethod(
-          this.contractAddress,
-          'gameData',
-          [{ type: 'int', value: roomCodeInt }]
-        ));
-        const stack = result.stack;
-        return {
-          betAmount: stack.readBigNumber(),
-          playerCount: stack.readNumber(),
-          depositCount: stack.readNumber(),
-          gameActive: stack.readBoolean(),
-          settled: stack.readBoolean(),
-          createdAt: stack.readNumber(),
-          totalDeposited: stack.readBigNumber(),
-        };
-      }
+      const result = await this._retry(() => this.client.runMethod(
+        this.contractAddress,
+        'gameData',
+        [{ type: 'int', value: roomCodeInt }]
+      ), 3, 3000);
+
+      const stack = result.stack;
+      // Tact returns GameData? as optional tuple
+      const optTuple = stack.readTupleOpt();
+      if (!optTuple) return null;
+
+      return {
+        betAmount: optTuple.readBigNumber(),
+        playerCount: optTuple.readBigNumber(),
+        depositCount: optTuple.readBigNumber(),
+        gameActive: optTuple.readBoolean(),
+        settled: optTuple.readBoolean(),
+        createdAt: optTuple.readBigNumber(),
+        totalDeposited: optTuple.readBigNumber(),
+      };
     } catch (err) {
       console.error(`[TON] getGameState failed for ${roomCode}:`, err.message);
       return null;
