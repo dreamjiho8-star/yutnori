@@ -207,13 +207,19 @@ function computeMove(token, steps) {
 
   // 빽도 (move back 1)
   if (steps === -1) {
-    // Center(24)에서 빽도: prevRoute로 돌아가기
-    if (pos === 24 && route === 'center') {
-      const backRoute = token.prevRoute || 'short5';
+    // 모든 갈림길(0, 5, 10, 15, 20, 24)에서 빽도: prevRoute로 이전 경로 1칸 전으로
+    const junctions = [0, 5, 10, 15, 20, 24];
+    if (junctions.includes(pos) && token.prevRoute) {
+      const backRoute = token.prevRoute;
       const prevPath = getPathForToken(backRoute);
-      const ci = prevPath.indexOf(24);
+      const ci = prevPath.indexOf(pos);
       if (ci > 0) {
-        return { newPos: prevPath[ci - 1], newRoute: backRoute, finished: false };
+        let backPos = prevPath[ci - 1];
+        if (backPos === 0) backPos = 20;
+        if (backPos === 24) {
+          return { newPos: 24, newRoute: 'center', finished: false, prevRoute: backRoute };
+        }
+        return { newPos: backPos, newRoute: backRoute, finished: false };
       }
     }
     const path = getPathForToken(route);
@@ -278,15 +284,26 @@ function computeMove(token, steps) {
 
   const landPos = path[newIdx];
 
-  // Auto-route at corners (only from main path)
-  // Position 15 has no shortcut (diagonal from 15 is longer than main path)
-  if (landPos === 5 && route === 'main') newRoute = 'short5';
-  if (landPos === 10 && route === 'main') newRoute = 'short10';
-
-  // Landing on center: switch to center→출발 shortcut route
+  // Auto-route at corners — save prevRoute at ALL junctions for 빽도 추적
+  // Junction 5: main → short5
+  if (landPos === 5 && route === 'main') {
+    return { newPos: landPos, newRoute: 'short5', finished: false, prevRoute: 'main' };
+  }
+  // Junction 10: main → short10
+  if (landPos === 10 && route === 'main') {
+    return { newPos: landPos, newRoute: 'short10', finished: false, prevRoute: 'main' };
+  }
+  // Junction 15: short5에서 왔는지 / main에서 왔는지 기록
+  if (landPos === 15 && (route === 'short5' || route === 'main')) {
+    return { newPos: landPos, newRoute: newRoute, finished: false, prevRoute: route };
+  }
+  // Junction 24 (center): short5/short10/short15 어디서 왔는지 기록
   if (landPos === 24) {
-    newRoute = 'center';
-    return { newPos: landPos, newRoute, finished: false, prevRoute: route };
+    return { newPos: landPos, newRoute: 'center', finished: false, prevRoute: route };
+  }
+  // Junction 0/20 (출발점): main에서 왔는지 / shortcut(30→20)에서 왔는지 기록
+  if (landPos === 20) {
+    return { newPos: landPos, newRoute: newRoute, finished: false, prevRoute: route };
   }
 
   return { newPos: landPos, newRoute, finished: false };

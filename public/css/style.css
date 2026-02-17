@@ -324,7 +324,8 @@ input[type="text"]:focus {
     radial-gradient(ellipse at 30% 30%, rgba(60, 30, 15, 0.8) 0%, transparent 55%),
     radial-gradient(ellipse at 75% 65%, rgba(45, 22, 10, 0.6) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 50%, rgba(30, 50, 20, 0.15) 0%, transparent 70%);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .game-wrapper {
@@ -1144,51 +1145,68 @@ input[type="text"]:focus {
 
 /* --- Responsive --- */
 @media (max-width: 900px) {
+  .game-page {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    height: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
   .game-wrapper {
     flex-direction: column;
-    height: auto;
-    min-height: 100vh;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
   .game-main {
-    padding: 10px;
-    gap: 10px;
+    padding: 8px;
+    gap: 6px;
+    flex-shrink: 0;
   }
   #board-canvas {
-    max-height: 40vh;
+    max-height: 38vh;
     max-width: 95vw;
   }
   .throw-area {
-    padding: 10px 16px;
+    padding: 8px 16px;
     gap: 12px;
     flex-wrap: nowrap;
     justify-content: center;
+    flex-shrink: 0;
   }
   .yut-sticks { gap: 6px; flex-shrink: 0; }
-  .stick { height: 55px; width: 20px; font-size: 11px; }
-  .throw-result { font-size: 1.6rem; min-width: 50px; }
+  .stick { height: 50px; width: 18px; font-size: 10px; }
+  .throw-result { font-size: 1.4rem; min-width: 45px; }
   .btn-throw {
-    padding: 10px 20px;
-    font-size: 0.9rem;
+    padding: 8px 18px;
+    font-size: 0.85rem;
     white-space: nowrap;
     flex-shrink: 0;
   }
+
+  /* 사이드바: 스크롤 가능 */
   .game-sidebar {
     width: 100%;
     border-left: none;
-    border-top: 2px solid rgba(212, 168, 67, 0.12);
+    border-top: 2px solid rgba(212, 168, 67, 0.2);
     max-height: none;
-    padding: 12px;
-    gap: 8px;
+    padding: 8px 12px;
+    gap: 6px;
   }
-  .sidebar-header { padding-bottom: 6px; }
+  .sidebar-header { padding-bottom: 4px; }
   .section h3 { font-size: 0.8rem; margin-bottom: 4px; }
-  .turn-indicator { padding: 8px 12px; }
-  .turn-player { font-size: 1rem; }
-  .player-item { padding: 6px 8px; font-size: 0.78rem; }
-  .token-btn { padding: 8px 10px; font-size: 0.78rem; }
-  .game-log-section { min-height: 80px; }
-  #game-log { max-height: 120px; font-size: 0.75rem; }
-  #game-chat-messages { max-height: 120px; font-size: 0.75rem; }
+  .turn-indicator { padding: 6px 10px; }
+  .turn-player { font-size: 0.95rem; }
+  .player-item { padding: 5px 8px; font-size: 0.75rem; }
+  .token-btn { padding: 6px 8px; font-size: 0.75rem; }
+  .pending-move-btn { padding: 6px 10px; font-size: 0.8rem; }
+  .game-log-section { min-height: 60px; }
+  #game-log { max-height: 90px; font-size: 0.72rem; }
+  #game-chat-messages { max-height: 90px; font-size: 0.72rem; }
+
+  /* 사이드바 접기 버튼 */
+  .sidebar-collapse-btn {
+    display: block !important;
+  }
 
   /* AI panel: full-width overlay on mobile */
   .ai-chat-panel {
@@ -1218,6 +1236,20 @@ input[type="text"]:focus {
     z-index: 90;
   }
   .ai-toggle-btn.hidden { display: none !important; }
+
+  .credits-footer-game { font-size: 0.6rem; padding: 4px 0; }
+}
+
+/* 사이드바 접기 버튼 (기본 숨김) */
+.sidebar-collapse-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: #D4A843;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 2px 8px;
+  margin-left: auto;
 }
 
 /* === Credits Footer === */

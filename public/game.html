@@ -26,6 +26,7 @@
       <div class="sidebar-header">
         <span class="sidebar-title">윷놀이</span>
         <button class="btn-icon" id="btn-sound" title="사운드">🔊</button>
+        <button class="sidebar-collapse-btn" id="sidebar-collapse" title="패널 접기/펴기">▼</button>
       </div>
 
       <div class="turn-indicator" id="turn-indicator">
@@ -114,6 +115,17 @@
     </div>
   </div>
 
+  <script>
+    // 모바일 사이드바 접기/펴기
+    const collapseBtn = document.getElementById('sidebar-collapse');
+    const sidebar = document.querySelector('.game-sidebar');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', () => {
+        sidebar.classList.toggle('collapsed');
+        collapseBtn.textContent = sidebar.classList.contains('collapsed') ? '▲' : '▼';
+      });
+    }
+  </script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/sound.js"></script>
   <script src="/js/game.js"></script>

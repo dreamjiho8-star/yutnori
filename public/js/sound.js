@@ -10,6 +10,10 @@ class SoundManager {
     if (this.initialized) return;
     try {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // iOS Safari: suspended 상태에서 시작됨, 유저 인터랙션 시 resume 필요
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume();
+      }
       this.initialized = true;
     } catch (e) {
       this.enabled = false;
@@ -18,6 +22,7 @@ class SoundManager {
 
   _tone(freq, dur, type = 'sine', vol = 0.3, delay = 0) {
     if (!this.enabled || !this.ctx) return;
+    if (this.ctx.state === 'suspended') this.ctx.resume();
     const t = this.ctx.currentTime + delay;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -33,6 +38,7 @@ class SoundManager {
 
   _noise(dur, vol = 0.1, delay = 0) {
     if (!this.enabled || !this.ctx) return;
+    if (this.ctx.state === 'suspended') this.ctx.resume();
     const sr = this.ctx.sampleRate;
     const buf = this.ctx.createBuffer(1, sr * dur, sr);
     const d = buf.getChannelData(0);
@@ -164,3 +170,23 @@ class SoundManager {
 }
 
 const sfx = new SoundManager();
+
+// iOS/모바일: 첫 터치에서 AudioContext unlock + 무음 재생
+function _unlockAudio() {
+  sfx.init();
+  if (sfx.ctx) {
+    if (sfx.ctx.state === 'suspended') sfx.ctx.resume();
+    // 무음 버퍼 재생으로 iOS 오디오 unlock
+    const buf = sfx.ctx.createBuffer(1, 1, 22050);
+    const src = sfx.ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(sfx.ctx.destination);
+    src.start(0);
+  }
+  document.removeEventListener('touchstart', _unlockAudio, true);
+  document.removeEventListener('touchend', _unlockAudio, true);
+  document.removeEventListener('click', _unlockAudio, true);
+}
+document.addEventListener('touchstart', _unlockAudio, true);
+document.addEventListener('touchend', _unlockAudio, true);
+document.addEventListener('click', _unlockAudio, true);
