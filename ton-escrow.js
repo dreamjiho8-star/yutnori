@@ -33,6 +33,7 @@ class TonEscrow {
     this.contractAddress = null;
     this.initialized = false;
     this.pendingDeposits = new Map();
+    this._gameCounters = new Map();
     this.isTestnet = false;
   }
 
@@ -120,14 +121,45 @@ class TonEscrow {
 
   /**
    * Convert room code string to uint64 for contract
-   * Simple hash: treat 4-char code as base-36 number
+   * Appends a game counter to avoid "Game already exists" on rematches
    */
   _roomCodeToInt(roomCode) {
-    let result = 0n;
+    let base = 0n;
     for (let i = 0; i < roomCode.length; i++) {
-      result = result * 36n + BigInt(parseInt(roomCode[i], 36));
+      base = base * 36n + BigInt(parseInt(roomCode[i], 36));
     }
-    return result;
+    // Mix in game counter to make each game unique
+    const counter = this._gameCounters.get(roomCode) || 0;
+    return base * 1000n + BigInt(counter);
+  }
+
+  /**
+   * Increment game counter for a room (call before each CreateGame)
+   */
+  _nextGameId(roomCode) {
+    const counter = (this._gameCounters.get(roomCode) || 0) + 1;
+    this._gameCounters.set(roomCode, counter);
+    return this._roomCodeToInt(roomCode);
+  }
+
+  /**
+   * Retry helper for TonCenter API calls (handles 429 rate limits)
+   */
+  async _retry(fn, retries = 5, baseWait = 2000) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await fn();
+      } catch (e) {
+        const is429 = e.message?.includes('429') || e.status === 429 || e.response?.status === 429;
+        if (is429 && i < retries - 1) {
+          const wait = baseWait * Math.pow(2, i);
+          console.log(`[TON] Rate limited, retrying in ${wait/1000}s... (${i+1}/${retries})`);
+          await new Promise(r => setTimeout(r, wait));
+        } else {
+          throw e;
+        }
+      }
+    }
   }
 
   /**
@@ -136,7 +168,7 @@ class TonEscrow {
   async _sendToContract(value, body) {
     if (!this.contractAddress) throw new Error('Contract not deployed');
 
-    const seqno = await this.walletContract.getSeqno();
+    const seqno = await this._retry(() => this.walletContract.getSeqno());
 
     await this.walletContract.sendTransfer({
       seqno,
@@ -152,9 +184,13 @@ class TonEscrow {
 
     // Wait for seqno to increment (tx confirmed)
     for (let i = 0; i < 20; i++) {
-      await new Promise(r => setTimeout(r, 2000));
-      const newSeqno = await this.walletContract.getSeqno();
-      if (newSeqno > seqno) return true;
+      await new Promise(r => setTimeout(r, 2500));
+      try {
+        const newSeqno = await this._retry(() => this.walletContract.getSeqno(), 3, 3000);
+        if (newSeqno > seqno) return true;
+      } catch (e) {
+        console.log(`[TON] Seqno check error (will retry): ${e.message}`);
+      }
     }
 
     console.warn('[TON] Transaction may still be pending');
@@ -171,7 +207,7 @@ class TonEscrow {
     }
 
     try {
-      const roomCodeInt = this._roomCodeToInt(roomCode);
+      const roomCodeInt = this._nextGameId(roomCode);
       const betAmountNano = toNano(betAmount.toString());
 
       // Build CreateGame message body
@@ -260,15 +296,15 @@ class TonEscrow {
       try {
         const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
         const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
-        const gameData = await contract.getGameData(roomCodeInt);
+        const gameData = await this._retry(() => contract.getGameData(roomCodeInt));
         return gameData;
       } catch (e) {
         // Fallback: direct getter call
-        const result = await this.client.runMethod(
+        const result = await this._retry(() => this.client.runMethod(
           this.contractAddress,
           'gameData',
           [{ type: 'int', value: roomCodeInt }]
-        );
+        ));
         return result.stack;
       }
     } catch (err) {
@@ -550,7 +586,7 @@ class TonEscrow {
   async getContractBalance() {
     if (!this.contractAddress) return 0;
     try {
-      const balance = await this.client.getBalance(this.contractAddress);
+      const balance = await this._retry(() => this.client.getBalance(this.contractAddress));
       return Number(fromNano(balance));
     } catch (err) {
       console.error('[TON] getContractBalance failed:', err.message);
