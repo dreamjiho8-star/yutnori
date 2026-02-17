@@ -1498,6 +1498,7 @@ function updateStatsPanel(stats) {
     { key: 'backdo', label: '빽도' },
   ];
 
+  const cols = keys.length + 1;
   let html = '<table class="stats-table"><thead><tr><th></th>';
   keys.forEach(k => {
     const label = getLabel(k);
@@ -1505,7 +1506,8 @@ function updateStatsPanel(stats) {
   });
   html += '</tr></thead><tbody>';
 
-  // Throw rows
+  // Section: throws
+  html += `<tr><td class="stats-section-label" colspan="${cols}">윷 결과</td></tr>`;
   throwNames.forEach(t => {
     html += `<tr><td class="stats-row-label">${t.label}</td>`;
     keys.forEach(k => {
@@ -1515,10 +1517,10 @@ function updateStatsPanel(stats) {
     html += '</tr>';
   });
 
-  // Separator
-  html += '<tr class="stats-sep"><td colspan="' + (keys.length + 1) + '"></td></tr>';
+  // Separator + section: captures
+  html += `<tr class="stats-sep"><td colspan="${cols}"></td></tr>`;
+  html += `<tr><td class="stats-section-label" colspan="${cols}">전투</td></tr>`;
 
-  // Capture rows
   html += '<tr><td class="stats-row-label">잡기</td>';
   keys.forEach(k => {
     const val = stats[k].captures || 0;
