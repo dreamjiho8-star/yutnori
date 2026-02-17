@@ -1220,22 +1220,7 @@ function renderTokenSelect() {
   });
   anyMoveable = moveableTokens.length > 0;
 
-  // Auto-move: 말도 1개, 이동도 1개일 때만 자동
-  // 이동이 여러 개면 어떤 걸 먼저 쓸지에 따라 결과가 달라지므로 선택권 줘야 함
-  if (moveableTokens.length === 1 && gameState.pendingMoves.length === 1 && !_autoMoveScheduled) {
-    const autoIdx = moveableTokens[0];
-    const autoMoveIdx = selectedMoveIdx;
-    selectedMoveIdx = null;
-    _autoMoveScheduled = true;
-    stopMoveTimer();
-    area.classList.add('hidden');
-    setTimeout(() => {
-      _autoMoveScheduled = false;
-      sfx.move();
-      socket.emit('move-token', { tokenIdx: autoIdx, moveIdx: autoMoveIdx });
-    }, 1200);
-    return;
-  }
+  // 자동이동 없음 — 항상 유저가 직접 선택
 
   // Auto-skip if no token can move
   if (!anyMoveable && !_autoMoveScheduled) {
