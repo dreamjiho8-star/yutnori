@@ -424,12 +424,12 @@ function throwYut() {
 }
 
 function getTokenCount(mode) {
-  const counts = { '1v1': 4, '2v2': 4, 'ffa3': 4, 'ffa4': 4 };
+  const counts = { '1v1': 4, '2v2': 4, '3v3': 6, 'ffa3': 4, 'ffa4': 4 };
   return counts[mode] || 4;
 }
 
 function getPlayersPerTeam(mode) {
-  const counts = { '1v1': 1, '2v2': 2 };
+  const counts = { '1v1': 1, '2v2': 2, '3v3': 3 };
   return counts[mode] || 2;
 }
 
@@ -438,7 +438,7 @@ function isFFA(mode) {
 }
 
 function getPlayerCount(mode) {
-  const counts = { '1v1': 2, '2v2': 4, 'ffa3': 3, 'ffa4': 4 };
+  const counts = { '1v1': 2, '2v2': 4, '3v3': 6, 'ffa3': 3, 'ffa4': 4 };
   return counts[mode] || 2;
 }
 
@@ -931,7 +931,7 @@ io.on('connection', (socket) => {
     let code;
     do { code = generateRoomCode(); } while (rooms[code]);
 
-    const mode = ['1v1','2v2','ffa3','ffa4'].includes(data.mode) ? data.mode : '2v2';
+    const mode = ['1v1','2v2','3v3','ffa3','ffa4'].includes(data.mode) ? data.mode : '2v2';
     const maxPlayers = getPlayerCount(mode);
 
     rooms[code] = {
