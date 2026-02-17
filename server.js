@@ -31,7 +31,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: wss: https://*.tonconnect.org https://*.toncenter.com https://bridge.tonapi.io https://bridge.ton.space https://*.wallet.tg https://raw.githubusercontent.com; img-src 'self' data: https:; frame-src 'self' https:");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: wss: https://*.tonconnect.org https://*.toncenter.com https://bridge.tonapi.io https://bridge.ton.space https://*.wallet.tg https://raw.githubusercontent.com https://tonconnectbridge.mytonwallet.org https://connect.tonhubapi.com https://unpkg.com; img-src 'self' data: https:; frame-src 'self' https:");
   next();
 });
 
