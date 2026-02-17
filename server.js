@@ -775,13 +775,15 @@ function scheduleCOMTurn(roomCode) {
           } else {
             const oppTeam = team2 === 'A' ? 'B' : 'A';
             const oppTokens = room2.game.tokens[oppTeam];
-            for (let i = 0; i < oppTokens.length; i++) {
-              if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
-                const capturedCount = captureStack(oppTokens, i);
-                room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
-                recordCaptureStat(room2, team2, oppTeam);
-                if (move.value !== 4 && move.value !== 5) {
-                  room2.game.captureBonus = true;
+            if (oppTokens) {
+              for (let i = 0; i < oppTokens.length; i++) {
+                if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
+                  const capturedCount = captureStack(oppTokens, i);
+                  room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+                  recordCaptureStat(room2, team2, oppTeam);
+                  if (move.value !== 4 && move.value !== 5) {
+                    room2.game.captureBonus = true;
+                  }
                 }
               }
             }
@@ -885,15 +887,19 @@ async function handleBettingPayout(roomCode, winnerTeam) {
       hasFailures: failedPayouts.length > 0,
     });
 
-    room.game.log.push(`💰 베팅 정산 완료! 총 ${totalPot.toFixed(4)} TON`);
-    results.forEach(r => {
-      if (r.failed) {
-        room.game.log.push(`⚠️ 정산 실패: ${r.amount.toFixed(4)} TON → ${r.address.slice(0, 8)}... (${r.retries}회 재시도 후 실패)`);
-      } else {
-        room.game.log.push(`💸 ${r.amount.toFixed(4)} TON → ${r.address.slice(0, 8)}... ${r.retries > 0 ? `(${r.retries}회 재시도)` : ''}`);
-      }
-    });
-    
+    // room이 payout 중 삭제됐을 수 있으므로 재확인
+    const roomAfter = rooms[roomCode];
+    if (roomAfter?.game) {
+      roomAfter.game.log.push(`💰 베팅 정산 완료! 총 ${totalPot.toFixed(4)} TON`);
+      results.forEach(r => {
+        if (r.failed) {
+          roomAfter.game.log.push(`⚠️ 정산 실패: ${r.amount.toFixed(4)} TON → ${r.address.slice(0, 8)}... (${r.retries}회 재시도 후 실패)`);
+        } else {
+          roomAfter.game.log.push(`💸 ${r.amount.toFixed(4)} TON → ${r.address.slice(0, 8)}... ${r.retries > 0 ? `(${r.retries}회 재시도)` : ''}`);
+        }
+      });
+    }
+
     if (failedPayouts.length > 0) {
       console.error(`[TON][ADMIN-ALERT] Room ${roomCode}: ${failedPayouts.length} payout(s) failed after all retries!`);
     }
@@ -909,7 +915,8 @@ async function handleBettingPayout(roomCode, winnerTeam) {
     }
   } catch (err) {
     console.error('[TON] Payout error:', err);
-    room.game.log.push('⚠️ 베팅 정산 중 오류 발생');
+    const roomErr = rooms[roomCode];
+    if (roomErr?.game) roomErr.game.log.push('⚠️ 베팅 정산 중 오류 발생');
   }
 
   delete roomBetting[roomCode];
@@ -931,7 +938,8 @@ function startGameForRoom(roomCode) {
     room.game.started = true;
     room.game.totalPlayers = totalNeeded;
     room.game.log.push(`🎮 ${totalNeeded}인전 개인전이 시작되었습니다!`);
-    room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
+    const firstPlayer = room.players[room.playerOrder[0]];
+    room.game.log.push(`🎯 ${firstPlayer?.name || '플레이어'}님의 차례입니다.`);
   } else {
     const ppt = getPlayersPerTeam(mode);
     const teamAPlayers = [];
@@ -944,14 +952,16 @@ function startGameForRoom(roomCode) {
 
     const ordered = [];
     for (let i = 0; i < ppt; i++) {
-      ordered.push(teamAPlayers[i], teamBPlayers[i]);
+      if (teamAPlayers[i]) ordered.push(teamAPlayers[i]);
+      if (teamBPlayers[i]) ordered.push(teamBPlayers[i]);
     }
     room.playerOrder = ordered.map(p => p.origIdx);
     room.game = createGameState(mode);
     room.game.started = true;
     room.game.totalPlayers = ppt * 2;
     room.game.log.push(`🎮 ${ppt}대${ppt} 게임이 시작되었습니다!`);
-    room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
+    const firstPlayer2 = room.players[room.playerOrder[0]];
+    room.game.log.push(`🎯 ${firstPlayer2?.name || '플레이어'}님의 차례입니다.`);
   }
 
   io.to(roomCode).emit('game-started', {
@@ -1334,7 +1344,7 @@ io.on('connection', (socket) => {
     // 이동 처리 중 중복 방지 lock
     if (room.game._moveLock) return;
     room.game._moveLock = true;
-    setTimeout(() => { if (room.game) room.game._moveLock = false; }, 200);
+    setTimeout(() => { if (rooms[currentRoom]?.game) rooms[currentRoom].game._moveLock = false; }, 200);
 
     const currentPlayerOrigIdx = room.playerOrder[room.game.currentPlayer];
     if (playerIdx !== currentPlayerOrigIdx) return;
@@ -1349,6 +1359,7 @@ io.on('connection', (socket) => {
     const ffaMode = isFFA(mode);
     const team = ffaMode ? getFFAPlayerKey(room.game.currentPlayer) : getTeamForPlayer(room.game.currentPlayer, room);
     const tokens = room.game.tokens[team];
+    if (!tokens) return;
 
     if (tokenIdx < 0 || tokenIdx >= tokens.length) return;
     if (moveIdx < 0 || moveIdx >= room.game.pendingMoves.length) return;
@@ -1362,7 +1373,7 @@ io.on('connection', (socket) => {
     const result = computeMove(token, move.value);
     if (!result) return socket.emit('move-error', '이동할 수 없습니다.');
 
-    const playerName = room.players[playerIdx].name;
+    const playerName = room.players[playerIdx]?.name || '플레이어';
 
     // Apply move
     token.pos = result.newPos;
@@ -1413,13 +1424,15 @@ io.on('connection', (socket) => {
       } else {
         const oppTeam = team === 'A' ? 'B' : 'A';
         const oppTokens = room.game.tokens[oppTeam];
-        for (let i = 0; i < oppTokens.length; i++) {
-          if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
-            const capturedCount = captureStack(oppTokens, i);
-            room.game.log.push(`💥 ${playerName}이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
-            recordCaptureStat(room, team, oppTeam);
-            if (move.value !== 4 && move.value !== 5) {
-              room.game.captureBonus = true;
+        if (oppTokens) {
+          for (let i = 0; i < oppTokens.length; i++) {
+            if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
+              const capturedCount = captureStack(oppTokens, i);
+              room.game.log.push(`💥 ${playerName}이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+              recordCaptureStat(room, team, oppTeam);
+              if (move.value !== 4 && move.value !== 5) {
+                room.game.captureBonus = true;
+              }
             }
           }
         }
@@ -1470,6 +1483,7 @@ io.on('connection', (socket) => {
     const skipFFA = isFFA(room.mode);
     const team = skipFFA ? getFFAPlayerKey(room.game.currentPlayer) : getTeamForPlayer(room.game.currentPlayer, room);
     const tokens = room.game.tokens[team];
+    if (!tokens) return;
     const move = room.game.pendingMoves[moveIdx];
 
     let anyCanMove = false;
@@ -1637,7 +1651,12 @@ io.on('connection', (socket) => {
     const room = rooms[currentRoom];
     if (!room || !room.players[playerIdx]) return;
     const name = room.players[playerIdx].name || '플레이어';
-    const team = room.players[playerIdx].team || 'A';
+    let team = room.players[playerIdx].team || 'A';
+    // FFA 모드: turnIdx 기반 P0/P1/P2/P3 키로 변환 (채팅 색상 매칭용)
+    if (isFFA(room.mode) && room.playerOrder) {
+      const turnIdx = room.playerOrder.indexOf(playerIdx);
+      if (turnIdx >= 0) team = `P${turnIdx}`;
+    }
     const msg = sanitizeMessage(data?.message);
     if (!msg.trim()) return;
     io.to(currentRoom).emit('chat-message', { name, team, message: msg });
@@ -1653,10 +1672,13 @@ io.on('connection', (socket) => {
       io.to(currentRoom).emit('player-disconnected', { playerIdx });
       broadcastRoom(currentRoom);
 
+      const roomToCheck = currentRoom;
       setTimeout(() => {
-        const allHumansGone = room.players.every(p => !p || p.isCOM || !p.connected);
+        const r = rooms[roomToCheck];
+        if (!r) return;
+        const allHumansGone = r.players.every(p => !p || p.isCOM || !p.connected);
         if (allHumansGone) {
-          delete rooms[currentRoom];
+          delete rooms[roomToCheck];
         }
       }, 60000);
     }

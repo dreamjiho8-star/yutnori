@@ -1446,8 +1446,8 @@ function escapeHtml(str) {
 
 function addGameChatMsg(name, team, message) {
   const div = document.createElement('div');
-  const chatColors = { A: '#4A8FE7', B: '#E84118', P0: '#4A8FE7', P1: '#E84118', P2: '#27AE60', P3: '#8E44AD' };
-  const color = chatColors[team] || '#4A8FE7';
+  const tc = TEAM_COLORS[team] || TEAM_COLORS.A;
+  const color = tc.light;
   const safeName = escapeHtml(name);
   const safeMsg = escapeHtml(message);
   div.innerHTML = `<span style="color:${color}; font-weight:700;">${safeName}</span>: ${safeMsg}`;
