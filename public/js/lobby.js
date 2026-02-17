@@ -30,10 +30,12 @@ async function initTonConnect() {
         document.getElementById('btn-connect-wallet').classList.add('hidden');
         document.getElementById('wallet-status').textContent = '연결됨 ✅';
         document.getElementById('wallet-status').style.color = '#27AE60';
-        // Register wallet with server if in room
+        // Register wallet with server (방 입장 전이든 후든 항상 시도)
         if (roomCode) {
           socket.emit('register-wallet', { address: walletAddress });
         }
+        // 방 입장 전 연결한 경우: 나중에 방 들어가면 자동 등록되도록 플래그
+        window._walletReady = true;
       } else {
         walletAddress = null;
         document.getElementById('wallet-info').classList.add('hidden');
@@ -447,10 +449,17 @@ socket.on('betting-payout', (data) => {
   sessionStorage.setItem('yut-payout', JSON.stringify(data));
 });
 
-// Register wallet when joining room with betting
+// Register wallet when joining room / betting update
 socket.on('room-joined', function bettingWalletRegister(data) {
-  if (walletAddress && roomCode) {
+  if (walletAddress) {
     setTimeout(() => socket.emit('register-wallet', { address: walletAddress }), 500);
+  }
+});
+
+// 베팅 설정 변경 시에도 지갑 재등록
+socket.on('betting-update', function bettingWalletReregister(data) {
+  if (walletAddress && roomCode && data.enabled) {
+    setTimeout(() => socket.emit('register-wallet', { address: walletAddress }), 300);
   }
 });
 
