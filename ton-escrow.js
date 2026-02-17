@@ -169,8 +169,9 @@ class TonEscrow {
     if (!this.contractAddress) throw new Error('Contract not deployed');
 
     const seqno = await this._retry(() => this.walletContract.getSeqno());
+    await new Promise(r => setTimeout(r, 2000)); // avoid 429 burst
 
-    await this.walletContract.sendTransfer({
+    await this._retry(() => this.walletContract.sendTransfer({
       seqno,
       secretKey: this.keyPair.secretKey,
       messages: [
@@ -180,7 +181,7 @@ class TonEscrow {
           body,
         }),
       ],
-    });
+    }));
 
     // Wait for seqno to increment (tx confirmed)
     for (let i = 0; i < 20; i++) {
