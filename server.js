@@ -1414,13 +1414,22 @@ io.on('connection', (socket) => {
     const mode = room.mode || '2v2';
 
     if (isFFA(mode)) {
-      // FFA: COM has no team, just fill empty slot or remove last COM
-      const comIdx = room.players.findIndex(p => p && p.isCOM);
-      if (comIdx !== -1) {
-        room.players[comIdx] = null;
+      // FFA: slot 기반으로 COM 추가/제거 (여러 자리에 COM 가능)
+      const allPlayers = [];
+      room.players.forEach((p, i) => {
+        if (p) allPlayers.push({ player: p, idx: i });
+      });
+
+      const slotIdx = typeof slot === 'number' ? slot : -1;
+
+      // 해당 슬롯이 COM이면 제거
+      if (slotIdx >= 0 && slotIdx < allPlayers.length && allPlayers[slotIdx].player.isCOM) {
+        room.players[allPlayers[slotIdx].idx] = null;
         broadcastRoom(currentRoom);
         return;
       }
+
+      // 빈 자리에 COM 추가
       const emptyIdx = room.players.findIndex(p => p === null);
       if (emptyIdx === -1) return socket.emit('room-error', '방이 가득 찼습니다.');
       room.players[emptyIdx] = {
@@ -1441,9 +1450,11 @@ io.on('connection', (socket) => {
         if (p && p.team === team) teamPlayers.push({ player: p, idx: i });
       });
 
-      const comInTeam = teamPlayers.find(tp => tp.player.isCOM);
-      if (comInTeam) {
-        room.players[comInTeam.idx] = null;
+      const slotIdx = typeof slot === 'number' ? slot : -1;
+
+      // 해당 슬롯이 COM이면 제거
+      if (slotIdx >= 0 && slotIdx < teamPlayers.length && teamPlayers[slotIdx].player.isCOM) {
+        room.players[teamPlayers[slotIdx].idx] = null;
         broadcastRoom(currentRoom);
         return;
       }
