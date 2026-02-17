@@ -1168,6 +1168,7 @@ function renderPendingMoves(moves) {
   }
 
   // Auto-select if only one move available
+  // 이동이 여러 개면 어떤 걸 먼저 쓸지 유저가 선택해야 함
   if (moves.length === 1 && selectedMoveIdx === null && !_autoMoveScheduled) {
     selectedMoveIdx = 0;
   }
@@ -1219,8 +1220,9 @@ function renderTokenSelect() {
   });
   anyMoveable = moveableTokens.length > 0;
 
-  // Auto-move if only one token can move (pick lowest numbered)
-  if (moveableTokens.length === 1 && !_autoMoveScheduled) {
+  // Auto-move: 말도 1개, 이동도 1개일 때만 자동
+  // 이동이 여러 개면 어떤 걸 먼저 쓸지에 따라 결과가 달라지므로 선택권 줘야 함
+  if (moveableTokens.length === 1 && gameState.pendingMoves.length === 1 && !_autoMoveScheduled) {
     const autoIdx = moveableTokens[0];
     const autoMoveIdx = selectedMoveIdx;
     selectedMoveIdx = null;
