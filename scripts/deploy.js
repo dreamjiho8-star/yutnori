@@ -28,7 +28,23 @@ async function deploy() {
 
   const apiKey = process.env.TON_API_KEY || '';
 
-  const client = new TonClient({ endpoint, apiKey });
+  const client = new TonClient({ endpoint, apiKey, timeout: 60000 });
+  
+  // Rate limit helper
+  const delay = (ms) => new Promise(r => setTimeout(r, ms));
+  async function retry(fn, retries = 5, wait = 3000) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await fn();
+      } catch (e) {
+        if (e.status === 429 && i < retries - 1) {
+          console.log(`Rate limited, waiting ${wait/1000}s... (${i+1}/${retries})`);
+          await delay(wait);
+          wait *= 2;
+        } else throw e;
+      }
+    }
+  }
 
   const mnemonicWords = mnemonic.trim().split(/\s+/);
   const keyPair = await mnemonicToPrivateKey(mnemonicWords);
@@ -45,7 +61,7 @@ async function deploy() {
   console.log(`Network: ${isTestnet ? 'TESTNET' : 'MAINNET'}`);
 
   // Check balance
-  const balance = await walletContract.getBalance();
+  const balance = await retry(() => walletContract.getBalance());
   console.log(`Balance: ${Number(balance) / 1e9} TON`);
 
   if (balance < toNano('0.1')) {
@@ -60,7 +76,8 @@ async function deploy() {
   console.log(`Contract address: ${contractAddress}`);
 
   // Check if already deployed
-  const existingState = await client.getContractState(contract.address);
+  await delay(2000);
+  const existingState = await retry(() => client.getContractState(contract.address));
   if (existingState.state === 'active') {
     console.log('Contract already deployed!');
     saveContractAddress(contractAddress);
@@ -68,7 +85,8 @@ async function deploy() {
   }
 
   // Deploy
-  const seqno = await walletContract.getSeqno();
+  await delay(2000);
+  const seqno = await retry(() => walletContract.getSeqno());
 
   await walletContract.sendTransfer({
     seqno,
@@ -88,7 +106,7 @@ async function deploy() {
   // Wait for deployment
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 2000));
-    const state = await client.getContractState(contract.address);
+    const state = await retry(() => client.getContractState(contract.address));
     if (state.state === 'active') {
       console.log('✅ Contract deployed successfully!');
       saveContractAddress(contractAddress);
