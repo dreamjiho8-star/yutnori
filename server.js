@@ -1522,6 +1522,7 @@ io.on('connection', (socket) => {
       playerIdx,
       address: data.address.slice(0, 8) + '...' + data.address.slice(-4),
     });
+    broadcastRoom(currentRoom);
   });
 
   socket.on('confirm-deposit', () => {

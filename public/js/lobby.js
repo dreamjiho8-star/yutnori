@@ -150,6 +150,10 @@ socket.on('room-created', (data) => {
   if (data.reconnToken) sessionStorage.setItem('yut-reconnToken', data.reconnToken);
   isHost = true;
   showRoom();
+  // Register wallet if already connected
+  if (walletAddress) {
+    setTimeout(() => socket.emit('register-wallet', { address: walletAddress }), 500);
+  }
 });
 
 socket.on('room-joined', (data) => {
