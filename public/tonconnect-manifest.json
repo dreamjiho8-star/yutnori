@@ -1,7 +1,5 @@
 {
-  "url": "https://yutnori.example.com",
+  "url": "https://yutnori.onrender.com",
   "name": "윷놀이 온라인",
-  "iconUrl": "https://yutnori.example.com/icon.png",
-  "termsOfUseUrl": "https://yutnori.example.com/terms",
-  "privacyPolicyUrl": "https://yutnori.example.com/privacy"
+  "iconUrl": "https://yutnori.onrender.com/icon.svg"
 }
