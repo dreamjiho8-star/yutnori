@@ -303,13 +303,22 @@ class TonEscrow {
         const gameData = await this._retry(() => contract.getGameData(roomCodeInt));
         return gameData;
       } catch (e) {
-        // Fallback: direct getter call
+        // Fallback: direct getter call, parse TupleReader into usable object
         const result = await this._retry(() => this.client.runMethod(
           this.contractAddress,
           'gameData',
           [{ type: 'int', value: roomCodeInt }]
         ));
-        return result.stack;
+        const stack = result.stack;
+        return {
+          betAmount: stack.readBigNumber(),
+          playerCount: stack.readNumber(),
+          depositCount: stack.readNumber(),
+          gameActive: stack.readBoolean(),
+          settled: stack.readBoolean(),
+          createdAt: stack.readNumber(),
+          totalDeposited: stack.readBigNumber(),
+        };
       }
     } catch (err) {
       console.error(`[TON] getGameState failed for ${roomCode}:`, err.message);
