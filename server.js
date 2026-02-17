@@ -424,22 +424,43 @@ function throwYut() {
 }
 
 function getTokenCount(mode) {
-  const counts = { '1v1': 4, '2v2': 4, '3v3': 6, '4v4': 6, '5v5': 8 };
+  const counts = { '1v1': 4, '2v2': 4, 'ffa3': 4, 'ffa4': 4 };
   return counts[mode] || 4;
 }
 
 function getPlayersPerTeam(mode) {
-  const counts = { '1v1': 1, '2v2': 2, '3v3': 3, '4v4': 4, '5v5': 5 };
+  const counts = { '1v1': 1, '2v2': 2 };
+  return counts[mode] || 2;
+}
+
+function isFFA(mode) {
+  return mode === 'ffa3' || mode === 'ffa4';
+}
+
+function getPlayerCount(mode) {
+  const counts = { '1v1': 2, '2v2': 4, 'ffa3': 3, 'ffa4': 4 };
   return counts[mode] || 2;
 }
 
 function createGameState(mode) {
   const tokenCount = getTokenCount(mode || '2v2');
   const makeTokens = () => Array.from({ length: tokenCount }, () => ({ pos: -1, route: 'main', stacked: 1, carriedBy: -1 }));
+
+  let tokens;
+  if (isFFA(mode)) {
+    tokens = {};
+    const pc = getPlayerCount(mode);
+    for (let i = 0; i < pc; i++) {
+      tokens[`P${i}`] = makeTokens();
+    }
+  } else {
+    tokens = { A: makeTokens(), B: makeTokens() };
+  }
+
   return {
     started: false,
     currentPlayer: 0,
-    tokens: { A: makeTokens(), B: makeTokens() },
+    tokens,
     pendingMoves: [],
     throwPhase: true,
     captureBonus: false,
@@ -460,6 +481,10 @@ function getTeamForPlayer(turnIdx, room) {
   return turnIdx % 2 === 0 ? 'A' : 'B';
 }
 
+function getFFAPlayerKey(turnIdx) {
+  return `P${turnIdx}`;
+}
+
 function checkWin(tokens) {
   return tokens.every(t => t.pos === -2);
 }
@@ -472,6 +497,7 @@ function broadcastRoom(roomCode) {
     players: room.players.map(p => p ? { name: p.name, team: p.team, ready: p.ready, connected: p.connected, isCOM: !!p.isCOM } : null),
     hostIdx: room.hostIdx,
     mode: room.mode || '2v2',
+    isFFA: isFFA(room.mode),
     betting: room.betting || null,
     wallets: rb ? Object.fromEntries(Object.entries(rb.wallets).map(([k, v]) => [k, v.slice(0, 8) + '...'])) : {},
   });
@@ -499,8 +525,13 @@ function comEvaluateMove(token, tokenIdx, move, team, gameTokens) {
   if (!result) return -Infinity;
 
   let score = 0;
-  const oppTeam = team === 'A' ? 'B' : 'A';
-  const oppTokens = gameTokens[oppTeam];
+  // Collect all opponent tokens into one array
+  const allOppTokens = [];
+  for (const [key, toks] of Object.entries(gameTokens)) {
+    if (key === team) continue;
+    toks.forEach(t => allOppTokens.push(t));
+  }
+  const oppTokens = allOppTokens;
   const myTokens = gameTokens[team];
 
   // Finishing is highest priority
@@ -609,7 +640,8 @@ function scheduleCOMTurn(roomCode) {
     if (room.game._comScheduled) return;
     room.game._comScheduled = true;
 
-    const team = getTeamForPlayer(room.game.currentPlayer, room);
+    const comFFA = isFFA(room.mode);
+    const team = comFFA ? getFFAPlayerKey(room.game.currentPlayer) : getTeamForPlayer(room.game.currentPlayer, room);
 
     if (room.game.throwPhase) {
       // COM throws yut after a delay
@@ -663,7 +695,8 @@ function scheduleCOMTurn(roomCode) {
         if (room2.game.throwPhase) return;
         if (room2.game.pendingMoves.length === 0) return;
 
-        const team2 = getTeamForPlayer(room2.game.currentPlayer, room2);
+        const comFFA2 = isFFA(room2.mode);
+        const team2 = comFFA2 ? getFFAPlayerKey(room2.game.currentPlayer) : getTeamForPlayer(room2.game.currentPlayer, room2);
 
         // Try to find a skipable move first if needed
         const skipIdx = comFindSkippableMove(room2.game, team2);
@@ -720,24 +753,44 @@ function scheduleCOMTurn(roomCode) {
 
           if (checkWin(tokens)) {
             room2.game.winner = team2;
-            room2.game.log.push(`🏆 팀 ${team2} 승리!`);
+            if (comFFA2) {
+              const winnerOrigIdx2 = room2.playerOrder[room2.game.currentPlayer];
+              const winnerName2 = room2.players[winnerOrigIdx2]?.name || 'COM';
+              room2.game.log.push(`🏆 ${winnerName2} 승리!`);
+              io.to(roomCode).emit('game-over', { winner: team2, winnerName: winnerName2 });
+            } else {
+              room2.game.log.push(`🏆 팀 ${team2} 승리!`);
+              io.to(roomCode).emit('game-over', { winner: team2 });
+            }
             handleBettingPayout(roomCode, team2);
-            io.to(roomCode).emit('game-over', { winner: team2 });
             broadcastGameState(roomCode);
             return;
           }
         } else if (token.pos >= 0) {
           // Check capture
-          const oppTeam = team2 === 'A' ? 'B' : 'A';
-          const oppTokens = room2.game.tokens[oppTeam];
-
-          for (let i = 0; i < oppTokens.length; i++) {
-            if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
-              const capturedCount = captureStack(oppTokens, i);
-              room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
-              // 윷/모로 잡으면 보너스 없음
-              if (move.value !== 4 && move.value !== 5) {
-                room2.game.captureBonus = true;
+          if (comFFA2) {
+            for (const [key, oppTokens] of Object.entries(room2.game.tokens)) {
+              if (key === team2) continue;
+              for (let i = 0; i < oppTokens.length; i++) {
+                if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
+                  const capturedCount = captureStack(oppTokens, i);
+                  room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+                  if (move.value !== 4 && move.value !== 5) {
+                    room2.game.captureBonus = true;
+                  }
+                }
+              }
+            }
+          } else {
+            const oppTeam = team2 === 'A' ? 'B' : 'A';
+            const oppTokens = room2.game.tokens[oppTeam];
+            for (let i = 0; i < oppTokens.length; i++) {
+              if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
+                const capturedCount = captureStack(oppTokens, i);
+                room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+                if (move.value !== 4 && move.value !== 5) {
+                  room2.game.captureBonus = true;
+                }
               }
             }
           }
@@ -796,9 +849,20 @@ async function handleBettingPayout(roomCode, winnerTeam) {
   const rb = roomBetting[roomCode];
   if (!rb) return;
 
-  const winnerPlayers = room.players
-    .map((p, i) => ({ ...p, idx: i }))
-    .filter(p => p && p.team === winnerTeam && !p.isCOM && rb.wallets[p.idx]);
+  const ffaGame = isFFA(room.mode);
+  let winnerPlayers;
+  if (ffaGame) {
+    // FFA: winner is the single player whose turn it was
+    const winnerTurnIdx = parseInt(winnerTeam.replace('P', ''));
+    const winnerOrigIdx = room.playerOrder[winnerTurnIdx];
+    const wp = room.players[winnerOrigIdx];
+    winnerPlayers = (wp && !wp.isCOM && rb.wallets[winnerOrigIdx])
+      ? [{ ...wp, idx: winnerOrigIdx }] : [];
+  } else {
+    winnerPlayers = room.players
+      .map((p, i) => ({ ...p, idx: i }))
+      .filter(p => p && p.team === winnerTeam && !p.isCOM && rb.wallets[p.idx]);
+  }
 
   if (winnerPlayers.length === 0) return;
 
@@ -867,9 +931,8 @@ io.on('connection', (socket) => {
     let code;
     do { code = generateRoomCode(); } while (rooms[code]);
 
-    const mode = ['1v1','2v2','3v3','4v4','5v5'].includes(data.mode) ? data.mode : '2v2';
-    const ppt = getPlayersPerTeam(mode);
-    const maxPlayers = ppt * 2;
+    const mode = ['1v1','2v2','ffa3','ffa4'].includes(data.mode) ? data.mode : '2v2';
+    const maxPlayers = getPlayerCount(mode);
 
     rooms[code] = {
       players: new Array(maxPlayers).fill(null),
@@ -885,7 +948,7 @@ io.on('connection', (socket) => {
       pid: typeof data.pid === 'string' ? data.pid.slice(0, 20) : socket.id,
       reconnToken,
       name: sanitizeName(data.name),
-      team: 'A',
+      team: isFFA(mode) ? null : 'A',
       ready: false,
       connected: true
     };
@@ -921,6 +984,7 @@ io.on('connection', (socket) => {
         io.to(code).emit('game-started', {
           playerOrder: room.playerOrder,
           mode: room.mode,
+          isFFA: isFFA(room.mode),
           tokenCount: getTokenCount(room.mode),
           players: room.players.map(p => p ? { name: p.name, team: p.team, isCOM: !!p.isCOM } : null)
         });
@@ -955,14 +1019,18 @@ io.on('connection', (socket) => {
       return socket.emit('room-error', '방이 가득 찼습니다.');
     }
 
-    // Assign to team with fewer members (or A if tied)
-    const maxPerTeam = getPlayersPerTeam(room.mode);
-    const teamACount = room.players.filter(p => p && p.team === 'A').length;
-    const teamBCount = room.players.filter(p => p && p.team === 'B').length;
     let assignTeam;
-    if (teamACount < maxPerTeam) assignTeam = 'A';
-    else if (teamBCount < maxPerTeam) assignTeam = 'B';
-    else assignTeam = 'A'; // fallback
+    if (isFFA(room.mode)) {
+      assignTeam = null;
+    } else {
+      // Assign to team with fewer members (or A if tied)
+      const maxPerTeam = getPlayersPerTeam(room.mode);
+      const teamACount = room.players.filter(p => p && p.team === 'A').length;
+      const teamBCount = room.players.filter(p => p && p.team === 'B').length;
+      if (teamACount < maxPerTeam) assignTeam = 'A';
+      else if (teamBCount < maxPerTeam) assignTeam = 'B';
+      else assignTeam = 'A';
+    }
 
     const newReconnToken = crypto.randomBytes(16).toString('hex');
     room.players[idx] = {
@@ -986,6 +1054,7 @@ io.on('connection', (socket) => {
     if (!currentRoom || playerIdx === null) return;
     const room = rooms[currentRoom];
     if (!room || !room.players[playerIdx]) return;
+    if (isFFA(room.mode)) return; // No team selection in FFA
 
     const team = data.team;
     if (team !== 'A' && team !== 'B') return;
@@ -1021,34 +1090,49 @@ io.on('connection', (socket) => {
     const allReady = room.players.every(p => p && (p.ready || p.isCOM));
     if (!allReady) return socket.emit('room-error', '모든 플레이어가 준비되어야 합니다.');
 
-    const ppt = getPlayersPerTeam(mode);
-    const teamAPlayers = [];
-    const teamBPlayers = [];
-    room.players.forEach((p, i) => {
-      if (!p) return;
-      if (p.team === 'A') teamAPlayers.push({ ...p, origIdx: i });
-      else teamBPlayers.push({ ...p, origIdx: i });
-    });
+    if (isFFA(mode)) {
+      const totalNeeded = getPlayerCount(mode);
+      const activePlayers = room.players.filter(p => p);
+      if (activePlayers.length !== totalNeeded) {
+        return socket.emit('room-error', `${totalNeeded}명이 필요합니다.`);
+      }
+      room.playerOrder = room.players.map((p, i) => p ? i : null).filter(i => i !== null);
+      room.game = createGameState(mode);
+      room.game.started = true;
+      room.game.totalPlayers = totalNeeded;
+      room.game.log.push(`🎮 ${totalNeeded}인전 개인전이 시작되었습니다!`);
+      room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
+    } else {
+      const ppt = getPlayersPerTeam(mode);
+      const teamAPlayers = [];
+      const teamBPlayers = [];
+      room.players.forEach((p, i) => {
+        if (!p) return;
+        if (p.team === 'A') teamAPlayers.push({ ...p, origIdx: i });
+        else teamBPlayers.push({ ...p, origIdx: i });
+      });
 
-    if (teamAPlayers.length !== ppt || teamBPlayers.length !== ppt) {
-      return socket.emit('room-error', `각 팀에 ${ppt}명씩 필요합니다.`);
-    }
+      if (teamAPlayers.length !== ppt || teamBPlayers.length !== ppt) {
+        return socket.emit('room-error', `각 팀에 ${ppt}명씩 필요합니다.`);
+      }
 
-    // Interleave: A1, B1, A2, B2, A3, B3, ...
-    const ordered = [];
-    for (let i = 0; i < ppt; i++) {
-      ordered.push(teamAPlayers[i], teamBPlayers[i]);
+      // Interleave: A1, B1, A2, B2, A3, B3, ...
+      const ordered = [];
+      for (let i = 0; i < ppt; i++) {
+        ordered.push(teamAPlayers[i], teamBPlayers[i]);
+      }
+      room.playerOrder = ordered.map(p => p.origIdx);
+      room.game = createGameState(mode);
+      room.game.started = true;
+      room.game.totalPlayers = ppt * 2;
+      room.game.log.push(`🎮 ${ppt}대${ppt} 게임이 시작되었습니다!`);
+      room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
     }
-    room.playerOrder = ordered.map(p => p.origIdx);
-    room.game = createGameState(mode);
-    room.game.started = true;
-    room.game.totalPlayers = ppt * 2;
-    room.game.log.push(`🎮 ${ppt}대${ppt} 게임이 시작되었습니다!`);
-    room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
 
     io.to(currentRoom).emit('game-started', {
       playerOrder: room.playerOrder,
       mode: mode,
+      isFFA: isFFA(mode),
       tokenCount: getTokenCount(mode),
       players: room.players.map(p => p ? { name: p.name, team: p.team, isCOM: !!p.isCOM } : null)
     });
@@ -1148,7 +1232,9 @@ io.on('connection', (socket) => {
     if (!data || typeof data.tokenIdx !== 'number' || typeof data.moveIdx !== 'number') return;
     if (!Number.isInteger(data.tokenIdx) || !Number.isInteger(data.moveIdx)) return;
     const { tokenIdx, moveIdx } = data;
-    const team = getTeamForPlayer(room.game.currentPlayer, room);
+    const mode = room.mode || '2v2';
+    const ffaMode = isFFA(mode);
+    const team = ffaMode ? getFFAPlayerKey(room.game.currentPlayer) : getTeamForPlayer(room.game.currentPlayer, room);
     const tokens = room.game.tokens[team];
 
     if (tokenIdx < 0 || tokenIdx >= tokens.length) return;
@@ -1174,38 +1260,59 @@ io.on('connection', (socket) => {
     room.game.pendingMoves.splice(moveIdx, 1);
 
     if (result.finished) {
-      // Finish this token and all carried tokens
       const count = finishStack(tokens, tokenIdx);
       room.game.log.push(`✅ ${playerName}의 말이 완주했습니다! (${count}개)`);
 
       if (checkWin(tokens)) {
-        room.game.winner = team;
-        room.game.log.push(`🏆 팀 ${team} 승리!`);
-        handleBettingPayout(currentRoom, team);
-        io.to(currentRoom).emit('game-over', { winner: team });
+        if (ffaMode) {
+          room.game.winner = team;
+          const winnerOrigIdx = room.playerOrder[room.game.currentPlayer];
+          const winnerName = room.players[winnerOrigIdx]?.name || playerName;
+          room.game.log.push(`🏆 ${winnerName} 승리!`);
+          handleBettingPayout(currentRoom, team);
+          io.to(currentRoom).emit('game-over', { winner: team, winnerName });
+        } else {
+          room.game.winner = team;
+          room.game.log.push(`🏆 팀 ${team} 승리!`);
+          handleBettingPayout(currentRoom, team);
+          io.to(currentRoom).emit('game-over', { winner: team });
+        }
         broadcastGameState(currentRoom);
         return;
       }
     } else if (token.pos >= 0) {
       // Check capture (opponent tokens at same position)
-      const oppTeam = team === 'A' ? 'B' : 'A';
-      const oppTokens = room.game.tokens[oppTeam];
-
-      for (let i = 0; i < oppTokens.length; i++) {
-        if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
-          const capturedCount = captureStack(oppTokens, i);
-          room.game.log.push(`💥 ${playerName}이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
-          // 윷/모로 잡으면 보너스 없음 (이미 추가 턴 있으므로)
-          if (move.value !== 4 && move.value !== 5) {
-            room.game.captureBonus = true;
+      if (ffaMode) {
+        // FFA: check all other players' tokens
+        for (const [key, oppTokens] of Object.entries(room.game.tokens)) {
+          if (key === team) continue;
+          for (let i = 0; i < oppTokens.length; i++) {
+            if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
+              const capturedCount = captureStack(oppTokens, i);
+              room.game.log.push(`💥 ${playerName}이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+              if (move.value !== 4 && move.value !== 5) {
+                room.game.captureBonus = true;
+              }
+            }
+          }
+        }
+      } else {
+        const oppTeam = team === 'A' ? 'B' : 'A';
+        const oppTokens = room.game.tokens[oppTeam];
+        for (let i = 0; i < oppTokens.length; i++) {
+          if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
+            const capturedCount = captureStack(oppTokens, i);
+            room.game.log.push(`💥 ${playerName}이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+            if (move.value !== 4 && move.value !== 5) {
+              room.game.captureBonus = true;
+            }
           }
         }
       }
 
-      // Check stacking (own team tokens at same position)
+      // Check stacking (own tokens at same position)
       for (let i = 0; i < tokens.length; i++) {
         if (i !== tokenIdx && tokens[i].pos >= 0 && samePosition(tokens[i].pos, token.pos)) {
-          // If overlap at pos 0/20, use the more advanced position (20)
           if (token.pos === 0 && tokens[i].pos === 20) {
             token.pos = 20;
             token.route = tokens[i].route;
@@ -1245,7 +1352,8 @@ io.on('connection', (socket) => {
     if (moveIdx < 0 || moveIdx >= room.game.pendingMoves.length) return;
 
     // Validate: no token can use this move
-    const team = getTeamForPlayer(room.game.currentPlayer, room);
+    const skipFFA = isFFA(room.mode);
+    const team = skipFFA ? getFFAPlayerKey(room.game.currentPlayer) : getTeamForPlayer(room.game.currentPlayer, room);
     const tokens = room.game.tokens[team];
     const move = room.game.pendingMoves[moveIdx];
 
@@ -1283,44 +1391,60 @@ io.on('connection', (socket) => {
     if (room.betting?.enabled) return socket.emit('room-error', '베팅 모드에서는 COM을 추가할 수 없습니다.');
 
     const { team, slot } = data;
-    if (team !== 'A' && team !== 'B') return;
-
     const mode = room.mode || '2v2';
-    const maxPerTeam = getPlayersPerTeam(mode);
 
-    // Find COM players in this team
-    const teamPlayers = [];
-    room.players.forEach((p, i) => {
-      if (p && p.team === team) teamPlayers.push({ player: p, idx: i });
-    });
+    if (isFFA(mode)) {
+      // FFA: COM has no team, just fill empty slot or remove last COM
+      const comIdx = room.players.findIndex(p => p && p.isCOM);
+      if (comIdx !== -1) {
+        room.players[comIdx] = null;
+        broadcastRoom(currentRoom);
+        return;
+      }
+      const emptyIdx = room.players.findIndex(p => p === null);
+      if (emptyIdx === -1) return socket.emit('room-error', '방이 가득 찼습니다.');
+      room.players[emptyIdx] = {
+        id: 'COM_' + crypto.randomBytes(4).toString('hex'),
+        pid: 'COM_' + Date.now(),
+        name: 'COM',
+        team: null,
+        ready: true,
+        connected: true,
+        isCOM: true
+      };
+    } else {
+      if (team !== 'A' && team !== 'B') return;
+      const maxPerTeam = getPlayersPerTeam(mode);
 
-    // Check if there's a COM in this team to remove
-    const comInTeam = teamPlayers.find(tp => tp.player.isCOM);
-    if (comInTeam) {
-      // Remove COM
-      room.players[comInTeam.idx] = null;
-      broadcastRoom(currentRoom);
-      return;
+      const teamPlayers = [];
+      room.players.forEach((p, i) => {
+        if (p && p.team === team) teamPlayers.push({ player: p, idx: i });
+      });
+
+      const comInTeam = teamPlayers.find(tp => tp.player.isCOM);
+      if (comInTeam) {
+        room.players[comInTeam.idx] = null;
+        broadcastRoom(currentRoom);
+        return;
+      }
+
+      if (teamPlayers.length >= maxPerTeam) {
+        return socket.emit('room-error', '해당 팀이 가득 찼습니다.');
+      }
+
+      const emptyIdx = room.players.findIndex(p => p === null);
+      if (emptyIdx === -1) return socket.emit('room-error', '방이 가득 찼습니다.');
+
+      room.players[emptyIdx] = {
+        id: 'COM_' + crypto.randomBytes(4).toString('hex'),
+        pid: 'COM_' + Date.now(),
+        name: 'COM',
+        team: team,
+        ready: true,
+        connected: true,
+        isCOM: true
+      };
     }
-
-    // Add COM if there's space
-    if (teamPlayers.length >= maxPerTeam) {
-      return socket.emit('room-error', '해당 팀이 가득 찼습니다.');
-    }
-
-    // Find empty slot
-    const emptyIdx = room.players.findIndex(p => p === null);
-    if (emptyIdx === -1) return socket.emit('room-error', '방이 가득 찼습니다.');
-
-    room.players[emptyIdx] = {
-      id: 'COM_' + crypto.randomBytes(4).toString('hex'),
-      pid: 'COM_' + Date.now(),
-      name: 'COM',
-      team: team,
-      ready: true,
-      connected: true,
-      isCOM: true
-    };
 
     broadcastRoom(currentRoom);
   });
@@ -1437,7 +1561,7 @@ io.on('connection', (socket) => {
     const room = rooms[currentRoom];
     if (!room || !room.players[playerIdx]) return;
     const name = room.players[playerIdx].name || '플레이어';
-    const team = room.players[playerIdx].team;
+    const team = room.players[playerIdx].team || 'A';
     const msg = sanitizeMessage(data?.message);
     if (!msg.trim()) return;
     io.to(currentRoom).emit('chat-message', { name, team, message: msg });

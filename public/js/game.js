@@ -10,16 +10,22 @@ const myName = sessionStorage.getItem('yut-name') || '플레이어';
 const myPlayerId = sessionStorage.getItem('yut-pid') || '';
 const myReconnToken = sessionStorage.getItem('yut-reconnToken') || '';
 const gameMode = sessionStorage.getItem('yut-mode') || '2v2';
+const isFFAMode = gameMode === 'ffa3' || gameMode === 'ffa4';
 let gamePlayers = JSON.parse(sessionStorage.getItem('yut-players') || 'null');
 let tokenCount = 4; // will be updated from server
 
 function getTeamForTurn(turnIdx) {
+  if (isFFAMode) return `P${turnIdx}`;
   if (gamePlayers && playerOrder) {
     const origIdx = playerOrder[turnIdx];
     const p = gamePlayers[origIdx];
     if (p) return p.team;
   }
   return turnIdx % 2 === 0 ? 'A' : 'B';
+}
+
+function getFFAPlayerKey(turnIdx) {
+  return `P${turnIdx}`;
 }
 
 if (!roomCode) window.location.href = '/';
@@ -83,7 +89,11 @@ boardPositions[20] = [...boardPositions[0]];
 // ============================================
 const TEAM_COLORS = {
   A: { main: '#2255AA', light: '#5BA3FF', dark: '#0D1F3C', glow: 'rgba(91,163,255,0.4)' },
-  B: { main: '#BB2211', light: '#FF5533', dark: '#4A0E0E', glow: 'rgba(255,85,51,0.4)' }
+  B: { main: '#BB2211', light: '#FF5533', dark: '#4A0E0E', glow: 'rgba(255,85,51,0.4)' },
+  P0: { main: '#1B3A6B', light: '#5BA3FF', dark: '#0D1F3C', glow: 'rgba(91,163,255,0.4)' },
+  P1: { main: '#C23616', light: '#FF5533', dark: '#4A0E0E', glow: 'rgba(255,85,51,0.4)' },
+  P2: { main: '#27AE60', light: '#58D68D', dark: '#145A32', glow: 'rgba(88,214,141,0.4)' },
+  P3: { main: '#8E44AD', light: '#BB6BD9', dark: '#4A235A', glow: 'rgba(187,107,217,0.4)' },
 };
 
 // ============================================
@@ -502,10 +512,11 @@ function drawToken(x, y, team, idx, stacked) {
   ctx.font = 'bold 11px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  const tokenLabel = isFFAMode ? `${parseInt(team.replace('P',''))+1}-${idx+1}` : `${team}${idx + 1}`;
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
-  ctx.fillText(`${team}${idx + 1}`, x + 0.5, y + 1.5);
+  ctx.fillText(tokenLabel, x + 0.5, y + 1.5);
   ctx.fillStyle = '#FFF';
-  ctx.fillText(`${team}${idx + 1}`, x, y + 1);
+  ctx.fillText(tokenLabel, x, y + 1);
 
   // Stack badge (3D pill)
   if (stacked > 1) {
@@ -538,14 +549,19 @@ function drawToken(x, y, team, idx, stacked) {
   }
 }
 
+function getTokenTeams(tokens) {
+  return Object.keys(tokens);
+}
+
 function drawTokens(tokens) {
   if (!tokens) return;
 
   const posMap = {};
-  for (const team of ['A', 'B']) {
+  const teams = getTokenTeams(tokens);
+  for (const team of teams) {
     tokens[team].forEach((t, i) => {
-      if (t.pos < 0) return; // skip home(-1), finished(-2), carried(-3)
-      const displayPos = t.pos === 20 ? 0 : t.pos; // pos 20 draws at pos 0
+      if (t.pos < 0) return;
+      const displayPos = t.pos === 20 ? 0 : t.pos;
       if (!posMap[displayPos]) posMap[displayPos] = [];
       posMap[displayPos].push({ team, idx: i, stacked: t.stacked || 1 });
     });
@@ -564,37 +580,56 @@ function drawTokens(tokens) {
 }
 
 function drawHomeTokens(tokens) {
-  const homes = { A: [95, 560], B: [505, 560] };
+  const teams = getTokenTeams(tokens);
+  let homes;
 
-  for (const team of ['A', 'B']) {
-    const [hx, hy] = homes[team];
-    const c = TEAM_COLORS[team];
+  if (isFFAMode) {
+    // FFA: distribute home areas across bottom
+    const positions = {
+      P0: [80, 560], P1: [230, 560], P2: [380, 560], P3: [520, 560]
+    };
+    homes = {};
+    teams.forEach(t => { homes[t] = positions[t] || [300, 560]; });
+  } else {
+    homes = { A: [95, 560], B: [505, 560] };
+  }
+
+  for (const team of teams) {
+    const [hx, hy] = homes[team] || [300, 560];
+    const c = TEAM_COLORS[team] || TEAM_COLORS.A;
     let count = 0;
 
-    // Label with shadow
+    // Label
+    let label;
+    if (isFFAMode) {
+      const turnIdx = parseInt(team.replace('P', ''));
+      const origIdx = playerOrder[turnIdx];
+      const pInfo = gamePlayers?.[origIdx];
+      label = pInfo ? (pInfo.isCOM ? 'COM' : pInfo.name) : team;
+    } else {
+      label = `팀 ${team} 대기`;
+    }
+
     ctx.font = 'bold 11px "Noto Sans KR", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillText(`팀 ${team} 대기`, hx + 1, hy - 25);
+    ctx.fillText(label, hx + 1, hy - 25);
     ctx.fillStyle = c.light;
-    ctx.fillText(`팀 ${team} 대기`, hx, hy - 26);
+    ctx.fillText(label, hx, hy - 26);
 
     tokens[team].forEach((t, i) => {
       if (t.pos !== -1) return;
-      const spacing = tokenCount <= 4 ? 28 : (tokenCount <= 6 ? 22 : 18);
-      const offset = (tokenCount <= 4 ? 35 : (tokenCount <= 6 ? 44 : 56));
+      const spacing = isFFAMode ? 22 : (tokenCount <= 4 ? 28 : (tokenCount <= 6 ? 22 : 18));
+      const offset = isFFAMode ? 33 : (tokenCount <= 4 ? 35 : (tokenCount <= 6 ? 44 : 56));
       const x = hx + count * spacing - offset;
-      // Shadow
       ctx.beginPath();
       ctx.ellipse(x + 1, hy + 3, 12, 6, 0, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(0,0,0,0.3)';
       ctx.fill();
-      // Dark base
       ctx.beginPath();
       ctx.arc(x, hy + 1, 12, 0, Math.PI * 2);
       ctx.fillStyle = c.dark;
       ctx.fill();
-      // Body
       const g = ctx.createRadialGradient(x - 3, hy - 3, 0, x, hy, 12);
       g.addColorStop(0, c.light);
       g.addColorStop(0.6, c.main);
@@ -606,12 +641,10 @@ function drawHomeTokens(tokens) {
       ctx.strokeStyle = 'rgba(255,255,255,0.2)';
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      // Highlight
       ctx.beginPath();
       ctx.ellipse(x - 2, hy - 3, 5, 3, -0.3, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255,255,255,0.25)';
       ctx.fill();
-      // Text
       ctx.fillStyle = '#FFF';
       ctx.font = 'bold 9px sans-serif';
       ctx.textAlign = 'center';
@@ -847,16 +880,17 @@ socket.on('game-state', (state) => {
     newLogs.forEach(entry => {
       if (entry.includes('💥')) {
         sfx.capture();
-        // Determine who captured whom
         let capturedTeam = null;
         if (prevTokens) {
-          for (const team of ['A', 'B']) {
+          const allTeams = getTokenTeams(state.tokens);
+          for (const team of allTeams) {
             state.tokens[team].forEach((t, i) => {
               const prev = prevTokens[team]?.[i];
               if (prev && prev.pos >= 0 && t.pos === -1) {
                 capturedTeam = team;
                 const pos = boardPositions[prev.pos];
-                if (pos) spawnParticles(pos[0], pos[1], TEAM_COLORS[team].light, 30);
+                const tc = TEAM_COLORS[team] || TEAM_COLORS.A;
+                if (pos) spawnParticles(pos[0], pos[1], tc.light, 30);
               }
             });
           }
@@ -887,10 +921,10 @@ socket.on('game-state', (state) => {
       if (entry.includes('📦')) sfx.stack();
       if (entry.includes('✅')) {
         sfx.finish();
-        // Determine which team finished
         let finishedTeam = null;
         if (prevTokens) {
-          for (const team of ['A', 'B']) {
+          const allTeams2 = getTokenTeams(state.tokens);
+          for (const team of allTeams2) {
             state.tokens[team].forEach((t, i) => {
               const prev = prevTokens[team]?.[i];
               if (prev && prev.pos >= 0 && t.pos === -2) {
@@ -940,7 +974,8 @@ socket.on('game-state', (state) => {
 
   // Detect token movement for step animation
   if (prevTokens) {
-    for (const team of ['A', 'B']) {
+    const animTeams = getTokenTeams(state.tokens);
+    for (const team of animTeams) {
       state.tokens[team].forEach((t, i) => {
         const prev = prevTokens[team]?.[i];
         if (!prev) return;
@@ -996,7 +1031,15 @@ socket.on('game-state', (state) => {
     stopMoveTimer();
     sfx.win();
     const modal = document.getElementById('win-modal');
-    document.getElementById('win-text').textContent = `팀 ${state.winner} 승리!`;
+    if (isFFAMode) {
+      const winnerTurnIdx = parseInt(state.winner.replace('P', ''));
+      const winnerOrigIdx = playerOrder[winnerTurnIdx];
+      const winnerInfo = gamePlayers?.[winnerOrigIdx];
+      const winnerName = winnerInfo ? (winnerInfo.isCOM ? 'COM' : winnerInfo.name) : '???';
+      document.getElementById('win-text').textContent = `🏆 ${winnerName} 승리!`;
+    } else {
+      document.getElementById('win-text').textContent = `팀 ${state.winner} 승리!`;
+    }
     modal.classList.remove('hidden');
   }
 });
@@ -1075,6 +1118,7 @@ function renderPlayerList() {
     container.appendChild(div);
   });
 }
+
 
 // ============================================
 // Move Timer (10-second decision timer)
@@ -1402,7 +1446,8 @@ function escapeHtml(str) {
 
 function addGameChatMsg(name, team, message) {
   const div = document.createElement('div');
-  const color = team === 'A' ? '#4A8FE7' : '#E84118';
+  const chatColors = { A: '#4A8FE7', B: '#E84118', P0: '#4A8FE7', P1: '#E84118', P2: '#27AE60', P3: '#8E44AD' };
+  const color = chatColors[team] || '#4A8FE7';
   const safeName = escapeHtml(name);
   const safeMsg = escapeHtml(message);
   div.innerHTML = `<span style="color:${color}; font-weight:700;">${safeName}</span>: ${safeMsg}`;
@@ -1449,10 +1494,11 @@ function buildGameStateText() {
   text += `사용 가능한 이동: ${gameState.pendingMoves.map(m => `${m.name}(${m.value})`).join(', ') || '없음'}\n`;
   text += gameState.throwPhase ? '상태: 던지기 단계\n' : '상태: 말 이동 단계\n';
 
-  ['A', 'B'].forEach(t => {
-    text += `\n팀 ${t}:\n`;
+  const allTeamsText = getTokenTeams(gameState.tokens);
+  allTeamsText.forEach(t => {
+    text += `\n${isFFAMode ? '플레이어' : '팀'} ${t}:\n`;
     const finished = gameState.tokens[t].filter(tk => tk.pos === -2).length;
-    text += `  완주: ${finished}/4\n`;
+    text += `  완주: ${finished}/${tokenCount}\n`;
     gameState.tokens[t].forEach((tok, i) => {
       let posStr;
       if (tok.pos === -1) posStr = '대기(홈)';
@@ -1686,6 +1732,12 @@ function getMyTeam() {
   const myTurnIdx = playerOrder.indexOf(myPlayerIdx);
   if (myTurnIdx === -1) return null;
   return getTeamForTurn(myTurnIdx);
+}
+
+function getMyFFAKey() {
+  const myTurnIdx = playerOrder.indexOf(myPlayerIdx);
+  if (myTurnIdx === -1) return null;
+  return `P${myTurnIdx}`;
 }
 
 // ============================================

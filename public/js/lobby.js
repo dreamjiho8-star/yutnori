@@ -116,7 +116,16 @@ function getName() {
 }
 
 function getPlayersPerTeam(mode) {
-  const counts = { '1v1': 1, '2v2': 2, '3v3': 3, '4v4': 4, '5v5': 5 };
+  const counts = { '1v1': 1, '2v2': 2 };
+  return counts[mode] || 2;
+}
+
+function isFFA(mode) {
+  return mode === 'ffa3' || mode === 'ffa4';
+}
+
+function getPlayerCount(mode) {
+  const counts = { '1v1': 2, '2v2': 4, 'ffa3': 3, 'ffa4': 4 };
   return counts[mode] || 2;
 }
 
@@ -182,30 +191,36 @@ socket.on('room-update', (data) => {
   else btnStart.classList.add('hidden');
 
   const mode = data.mode || '2v2';
-  const ppt = getPlayersPerTeam(mode);
+  const ffaMode = isFFA(mode);
   const slotsA = document.getElementById('slots-a');
   const slotsB = document.getElementById('slots-b');
+  const teamArea = document.querySelector('.team-area');
+  const teamSelectArea = document.getElementById('team-select-area');
 
-  // Collect players per team
-  const teamA = [];
-  const teamB = [];
-  data.players.forEach((p, i) => {
-    if (!p) return;
-    if (p.team === 'A') teamA.push({ ...p, idx: i });
-    else teamB.push({ ...p, idx: i });
-  });
+  if (ffaMode) {
+    // FFA mode: hide team structure, show player list
+    document.querySelector('.vs').style.display = 'none';
+    slotsB.parentElement.style.display = 'none';
+    if (teamSelectArea) teamSelectArea.style.display = 'none';
 
-  // Render slots for a team
-  function renderTeamSlots(container, team, teamPlayers, ppt) {
-    container.innerHTML = '';
-    for (let s = 0; s < ppt; s++) {
+    // Rename Team A column header
+    const teamAHeader = slotsA.parentElement.querySelector('h3');
+    if (teamAHeader) teamAHeader.textContent = '👥 플레이어';
+
+    const totalSlots = getPlayerCount(mode);
+    const allPlayers = [];
+    data.players.forEach((p, i) => {
+      if (p) allPlayers.push({ ...p, idx: i });
+    });
+
+    slotsA.innerHTML = '';
+    for (let s = 0; s < totalSlots; s++) {
       const wrapper = document.createElement('div');
       wrapper.className = 'slot-wrapper';
-
       const slot = document.createElement('div');
       slot.className = 'slot';
 
-      const p = teamPlayers[s];
+      const p = allPlayers[s];
       if (p) {
         if (p.isCOM) {
           slot.textContent = '🤖 COM';
@@ -215,10 +230,10 @@ socket.on('room-update', (data) => {
             const comBtn = document.createElement('button');
             comBtn.className = 'btn-com com-active';
             comBtn.textContent = '-COM';
-            comBtn.addEventListener('click', () => socket.emit('toggle-com', { team, slot: s }));
+            comBtn.addEventListener('click', () => socket.emit('toggle-com', { team: null, slot: s }));
             wrapper.appendChild(slot);
             wrapper.appendChild(comBtn);
-            container.appendChild(wrapper);
+            slotsA.appendChild(wrapper);
             continue;
           }
         } else {
@@ -236,21 +251,87 @@ socket.on('room-update', (data) => {
           const comBtn = document.createElement('button');
           comBtn.className = 'btn-com';
           comBtn.textContent = '+COM';
-          comBtn.addEventListener('click', () => socket.emit('toggle-com', { team, slot: s }));
+          comBtn.addEventListener('click', () => socket.emit('toggle-com', { team: null, slot: s }));
           wrapper.appendChild(slot);
           wrapper.appendChild(comBtn);
-          container.appendChild(wrapper);
+          slotsA.appendChild(wrapper);
           continue;
         }
       }
-
       wrapper.appendChild(slot);
-      container.appendChild(wrapper);
+      slotsA.appendChild(wrapper);
     }
-  }
+  } else {
+    // Team mode
+    document.querySelector('.vs').style.display = '';
+    slotsB.parentElement.style.display = '';
+    if (teamSelectArea) teamSelectArea.style.display = '';
+    const teamAHeader = slotsA.parentElement.querySelector('h3');
+    if (teamAHeader) teamAHeader.textContent = '🔵 팀 A';
 
-  renderTeamSlots(slotsA, 'A', teamA, ppt);
-  renderTeamSlots(slotsB, 'B', teamB, ppt);
+    const ppt = getPlayersPerTeam(mode);
+    const teamA = [];
+    const teamB = [];
+    data.players.forEach((p, i) => {
+      if (!p) return;
+      if (p.team === 'A') teamA.push({ ...p, idx: i });
+      else teamB.push({ ...p, idx: i });
+    });
+
+    function renderTeamSlots(container, team, teamPlayers, ppt) {
+      container.innerHTML = '';
+      for (let s = 0; s < ppt; s++) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'slot-wrapper';
+        const slot = document.createElement('div');
+        slot.className = 'slot';
+
+        const p = teamPlayers[s];
+        if (p) {
+          if (p.isCOM) {
+            slot.textContent = '🤖 COM';
+            slot.classList.add('filled', 'com-slot');
+            if (p.ready) slot.classList.add('ready');
+            if (isHost) {
+              const comBtn = document.createElement('button');
+              comBtn.className = 'btn-com com-active';
+              comBtn.textContent = '-COM';
+              comBtn.addEventListener('click', () => socket.emit('toggle-com', { team, slot: s }));
+              wrapper.appendChild(slot);
+              wrapper.appendChild(comBtn);
+              container.appendChild(wrapper);
+              continue;
+            }
+          } else {
+            let label = (p.name || '').slice(0, 10);
+            if (p.idx === data.hostIdx) label += ' 👑';
+            if (p.idx === myPlayerIdx) label += ' (나)';
+            slot.textContent = label;
+            slot.classList.add('filled');
+            if (p.ready) slot.classList.add('ready');
+            if (!p.connected) slot.classList.add('disconnected');
+          }
+        } else {
+          slot.textContent = '비어있음';
+          if (isHost) {
+            const comBtn = document.createElement('button');
+            comBtn.className = 'btn-com';
+            comBtn.textContent = '+COM';
+            comBtn.addEventListener('click', () => socket.emit('toggle-com', { team, slot: s }));
+            wrapper.appendChild(slot);
+            wrapper.appendChild(comBtn);
+            container.appendChild(wrapper);
+            continue;
+          }
+        }
+        wrapper.appendChild(slot);
+        container.appendChild(wrapper);
+      }
+    }
+
+    renderTeamSlots(slotsA, 'A', teamA, ppt);
+    renderTeamSlots(slotsB, 'B', teamB, ppt);
+  }
 });
 
 socket.on('game-started', (data) => {

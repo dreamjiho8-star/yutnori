@@ -853,14 +853,24 @@ input[type="text"]:focus {
   flex-shrink: 0;
 }
 
-.team-dot.team-A {
+.team-dot.team-A, .team-dot.team-P0 {
   background: var(--team-a-light);
   box-shadow: 0 0 8px rgba(74, 143, 231, 0.5);
 }
 
-.team-dot.team-B {
+.team-dot.team-B, .team-dot.team-P1 {
   background: var(--team-b-light);
   box-shadow: 0 0 8px rgba(232, 65, 24, 0.5);
+}
+
+.team-dot.team-P2 {
+  background: #58D68D;
+  box-shadow: 0 0 8px rgba(88, 214, 141, 0.5);
+}
+
+.team-dot.team-P3 {
+  background: #BB6BD9;
+  box-shadow: 0 0 8px rgba(187, 107, 217, 0.5);
 }
 
 /* Move Timer */
@@ -947,8 +957,10 @@ input[type="text"]:focus {
   color: var(--text-cream);
 }
 
-.token-btn.team-A { border-color: var(--team-a-light); color: var(--team-a-light); }
-.token-btn.team-B { border-color: var(--team-b-light); color: var(--team-b-light); }
+.token-btn.team-A, .token-btn.team-P0 { border-color: var(--team-a-light); color: var(--team-a-light); }
+.token-btn.team-B, .token-btn.team-P1 { border-color: var(--team-b-light); color: var(--team-b-light); }
+.token-btn.team-P2 { border-color: #58D68D; color: #58D68D; }
+.token-btn.team-P3 { border-color: #BB6BD9; color: #BB6BD9; }
 
 .token-btn:hover:not(:disabled) {
   transform: scale(1.15);
