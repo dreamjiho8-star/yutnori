@@ -242,11 +242,10 @@ class TonEscrow {
         // Fallback: manually build the message
         console.log('[TON] ABI not available, building message manually');
         body = beginCell()
-          .storeUint(0x6ead1d33, 32) // CreateGame opcode (approximate)
-          .storeUint(0, 64) // query_id
-          .storeUint(roomCodeInt, 64)
-          .storeCoins(betAmountNano)
-          .storeUint(playerCount, 8)
+          .storeUint(0x6ead1d33, 32) // CreateGame opcode
+          .storeUint(roomCodeInt, 64) // roomCode
+          .storeCoins(betAmountNano) // betAmount
+          .storeUint(playerCount, 8) // playerCount
           .endCell();
 
         await this._sendToContract('0.05', body);
@@ -271,11 +270,10 @@ class TonEscrow {
     const roomCodeInt = this._activeGameIds.get(roomCode) || this._roomCodeToInt(roomCode);
     console.log(`[TON] getDepositTransaction: roomCode=${roomCode}, gameId=${roomCodeInt}`);
 
-    // Build Deposit message body
+    // Build Deposit message body (Tact: opcode + roomCode, no query_id)
     const body = beginCell()
-      .storeUint(0xb0d37ea6, 32) // Deposit opcode (approximate, will match compiled)
-      .storeUint(0, 64) // query_id
-      .storeUint(roomCodeInt, 64)
+      .storeUint(0xb0d37ea6, 32) // Deposit opcode
+      .storeUint(roomCodeInt, 64) // roomCode
       .endCell();
 
     return {
@@ -462,14 +460,13 @@ class TonEscrow {
       } catch (e) {
         // Manual fallback
         const body = beginCell()
-          .storeUint(0x2122392f, 32)
-          .storeUint(0, 64)
-          .storeUint(roomCodeInt, 64)
-          .storeAddress(w1)
-          .storeAddress(w2)
-          .storeAddress(w3)
-          .storeAddress(w4)
-          .storeUint(winnerCount, 8)
+          .storeUint(0x2122392f, 32) // SettlePayout opcode
+          .storeUint(roomCodeInt, 64) // roomCode
+          .storeAddress(w1) // winner1
+          .storeAddress(w2) // winner2 (optional)
+          .storeAddress(w3) // winner3 (optional)
+          .storeAddress(w4) // winner4 (optional)
+          .storeUint(winnerCount, 8) // winnerCount
           .endCell();
 
         await this._sendToContract('0.1', body);
@@ -526,9 +523,8 @@ class TonEscrow {
         );
       } catch (e) {
         const body = beginCell()
-          .storeUint(0xa62c7809, 32)
-          .storeUint(0, 64)
-          .storeUint(roomCodeInt, 64)
+          .storeUint(0xa62c7809, 32) // Refund opcode
+          .storeUint(roomCodeInt, 64) // roomCode
           .endCell();
 
         await this._sendToContract('0.1', body);
@@ -571,8 +567,7 @@ class TonEscrow {
         // Manual fallback
         const body = beginCell()
           .storeUint(0xeb4ab20c, 32) // WithdrawFees opcode
-          .storeUint(0, 64) // query_id
-          .storeCoins(amountNano)
+          .storeCoins(amountNano) // amount
           .endCell();
 
         await this._sendToContract('0.05', body);
