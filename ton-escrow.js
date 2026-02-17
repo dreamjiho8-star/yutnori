@@ -34,6 +34,7 @@ class TonEscrow {
     this.initialized = false;
     this.pendingDeposits = new Map();
     this._gameCounters = new Map();
+    this._activeGameIds = new Map(); // roomCode → roomCodeInt (CreateGame에서 저장, Deposit에서 참조)
     this.isTestnet = false;
   }
 
@@ -235,6 +236,7 @@ class TonEscrow {
           }
         );
         console.log(`[TON] CreateGame sent for room ${roomCode} (${roomCodeInt}), bet: ${betAmount} TON`);
+        this._activeGameIds.set(roomCode, roomCodeInt);
         return true;
       } catch (abiErr) {
         // Fallback: manually build the message
@@ -249,6 +251,7 @@ class TonEscrow {
 
         await this._sendToContract('0.05', body);
         console.log(`[TON] CreateGame sent (manual) for room ${roomCode}`);
+        this._activeGameIds.set(roomCode, roomCodeInt);
         return true;
       }
     } catch (err) {
@@ -264,7 +267,9 @@ class TonEscrow {
   getDepositTransaction(roomCode, betAmount) {
     if (!this.contractAddress) return null;
 
-    const roomCodeInt = this._roomCodeToInt(roomCode);
+    // CreateGame에서 저장한 실제 gameId 사용 (서버 재시작 시 불일치 방지)
+    const roomCodeInt = this._activeGameIds.get(roomCode) || this._roomCodeToInt(roomCode);
+    console.log(`[TON] getDepositTransaction: roomCode=${roomCode}, gameId=${roomCodeInt}`);
 
     // Build Deposit message body
     const body = beginCell()
@@ -292,8 +297,8 @@ class TonEscrow {
     if (!this.contractAddress) return null;
 
     try {
-      const roomCodeInt = this._roomCodeToInt(roomCode);
-      
+      const roomCodeInt = this._activeGameIds.get(roomCode) || this._roomCodeToInt(roomCode);
+
       try {
         const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
         const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
@@ -423,7 +428,7 @@ class TonEscrow {
     }
 
     try {
-      const roomCodeInt = this._roomCodeToInt(roomCode);
+      const roomCodeInt = this._activeGameIds.get(roomCode) || this._roomCodeToInt(roomCode);
       const winnerAddresses = winners.map(w => Address.parse(w.address));
       const winnerCount = winnerAddresses.length;
 
@@ -502,7 +507,7 @@ class TonEscrow {
     if (!this.contractAddress) return;
 
     try {
-      const roomCodeInt = this._roomCodeToInt(roomCode);
+      const roomCodeInt = this._activeGameIds.get(roomCode) || this._roomCodeToInt(roomCode);
 
       try {
         const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
