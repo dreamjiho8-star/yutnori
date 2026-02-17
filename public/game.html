@@ -115,17 +115,6 @@
     </div>
   </div>
 
-  <script>
-    // 모바일 사이드바 접기/펴기
-    const collapseBtn = document.getElementById('sidebar-collapse');
-    const sidebar = document.querySelector('.game-sidebar');
-    if (collapseBtn) {
-      collapseBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('collapsed');
-        collapseBtn.textContent = sidebar.classList.contains('collapsed') ? '▲' : '▼';
-      });
-    }
-  </script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/sound.js"></script>
   <script src="/js/game.js"></script>

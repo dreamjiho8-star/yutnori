@@ -14,6 +14,10 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : undefined; // undefined = 개발 시 전체 허용, 배포 시 환경변수로 제한
 
+if (!process.env.ALLOWED_ORIGINS) {
+  console.warn('[SECURITY] ALLOWED_ORIGINS 환경변수가 설정되지 않았습니다. 프로덕션에서는 반드시 설정하세요.');
+}
+
 const io = new Server(server, {
   pingTimeout: 60000,
   pingInterval: 25000,
@@ -67,6 +71,15 @@ function sanitizeMessage(msg) {
 
 function isValidRoomCode(code) {
   return typeof code === 'string' && /^[A-Z2-9]{4}$/.test(code);
+}
+
+function isValidTonAddress(addr) {
+  if (typeof addr !== 'string') return false;
+  // User-friendly format (base64url, 48 chars)
+  if (/^[A-Za-z0-9_-]{48}$/.test(addr)) return true;
+  // Raw format: workchain:hex
+  if (/^-?[0-9]:[0-9a-fA-F]{64}$/.test(addr)) return true;
+  return false;
 }
 
 // === API Rate Limiting 미들웨어 ===
@@ -387,28 +400,32 @@ function stackTokens(tokens, dstIdx, srcIdx) {
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = crypto.randomBytes(4);
+  const limit = 256 - (256 % chars.length); // rejection sampling으로 모듈로 바이어스 제거
   let code = '';
-  for (let i = 0; i < 4; i++) code += chars[bytes[i] % chars.length];
+  while (code.length < 4) {
+    const bytes = crypto.randomBytes(8);
+    for (let i = 0; i < bytes.length && code.length < 4; i++) {
+      if (bytes[i] < limit) {
+        code += chars[bytes[i] % chars.length];
+      }
+    }
+  }
   return code;
 }
 
 function throwYut() {
-  // Security: Generate verifiable seed for game integrity
-  const seed = crypto.randomBytes(32).toString('hex');
-  const seedHash = crypto.createHash('sha256').update(seed).digest('hex');
-  
+  // Provable fairness: seed만으로 결과를 재현할 수 있음 (검증 가능)
+  const seedBuf = crypto.randomBytes(32);
+  const seed = seedBuf.toString('hex');
+  const seedHash = crypto.createHash('sha256').update(seedBuf).digest('hex');
+
   let flats = 0;
-  // Use seed-derived randomness mixed with Math.random for unpredictability
+  // seed 바이트만 사용 (Math.random 혼합 제거 → 시드로 결과 검증 가능)
   for (let i = 0; i < 4; i++) {
-    const seedByte = parseInt(seed.substring(i * 2, i * 2 + 2), 16) / 255;
-    const mixed = (seedByte + Math.random()) / 2;
-    if (mixed < 0.54) flats++;
+    if (seedBuf[i] / 256 < 0.54) flats++;
   }
   if (flats === 1) {
-    const backdoByte = parseInt(seed.substring(8, 10), 16) / 255;
-    const mixed = (backdoByte + Math.random()) / 2;
-    if (mixed < 0.17) {
+    if (seedBuf[4] / 256 < 0.17) {
       return { name: '빽도', value: -1, flats: -1, extraTurn: false, seed, seedHash };
     }
   }
@@ -666,6 +683,7 @@ function scheduleCOMTurn(roomCode) {
           seed,
           seedHash,
         });
+        if (room2.game.integrityLog.length > 200) room2.game.integrityLog = room2.game.integrityLog.slice(-100);
 
         if (result.extraTurn) {
           room2.game.throwPhase = true;
@@ -1061,8 +1079,9 @@ io.on('connection', (socket) => {
 
     const currentTeam = room.players[playerIdx].team;
     const teamCount = room.players.filter(p => p && p.team === team).length;
+    const maxPerTeam = getPlayersPerTeam(room.mode);
 
-    if (currentTeam !== team && teamCount >= 2) {
+    if (currentTeam !== team && teamCount >= maxPerTeam) {
       return socket.emit('room-error', '해당 팀이 가득 찼습니다.');
     }
 
@@ -1192,6 +1211,7 @@ io.on('connection', (socket) => {
       seed,
       seedHash,
     });
+    if (room.game.integrityLog.length > 200) room.game.integrityLog = room.game.integrityLog.slice(-100);
 
     if (result.extraTurn) {
       room.game.throwPhase = true;
@@ -1482,7 +1502,7 @@ io.on('connection', (socket) => {
     if (!currentRoom || playerIdx === null) return;
     const room = rooms[currentRoom];
     if (!room?.betting?.enabled) return;
-    if (typeof data.address !== 'string' || data.address.length < 10) return;
+    if (!isValidTonAddress(data.address)) return;
 
     if (!roomBetting[currentRoom]) return;
     roomBetting[currentRoom].wallets[playerIdx] = data.address;

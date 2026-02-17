@@ -1080,8 +1080,8 @@ socket.on('betting-payout', (data) => {
   div.className = 'payout-info';
   div.innerHTML = `
     <h4>💰 베팅 정산</h4>
-    <p>총 상금: ${data.totalPot} TON</p>
-    ${data.payouts.map(p => `<p>💸 ${p.amount} TON → ${p.address} ${p.txHash ? `<br><small>TX: ${p.txHash.slice(0, 12)}...</small>` : ''}</p>`).join('')}
+    <p>총 상금: ${escapeHtml(String(data.totalPot))} TON</p>
+    ${data.payouts.map(p => `<p>💸 ${escapeHtml(String(p.amount))} TON → ${escapeHtml(p.address)} ${p.txHash ? `<br><small>TX: ${escapeHtml(p.txHash.slice(0, 12))}...</small>` : ''}</p>`).join('')}
   `;
   content.appendChild(div);
 });
@@ -1464,13 +1464,10 @@ function addGameChatMsg(name, team, message) {
 gameChatSend.addEventListener('click', () => {
   const msg = gameChatInput.value.trim();
   if (!msg) return;
+  sfx.chatTick();
   socket.emit('chat-message', { message: msg });
   gameChatInput.value = '';
 });
-
-gameChatSend.addEventListener('click', () => {
-  sfx.chatTick();
-}, true);
 
 gameChatInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) {
@@ -1738,6 +1735,18 @@ function getMyFFAKey() {
   const myTurnIdx = playerOrder.indexOf(myPlayerIdx);
   if (myTurnIdx === -1) return null;
   return `P${myTurnIdx}`;
+}
+
+// ============================================
+// Sidebar Collapse (mobile)
+// ============================================
+const collapseBtn = document.getElementById('sidebar-collapse');
+const sidebarEl = document.querySelector('.game-sidebar');
+if (collapseBtn) {
+  collapseBtn.addEventListener('click', () => {
+    sidebarEl.classList.toggle('collapsed');
+    collapseBtn.textContent = sidebarEl.classList.contains('collapsed') ? '▲' : '▼';
+  });
 }
 
 // ============================================

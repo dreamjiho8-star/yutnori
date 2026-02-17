@@ -126,7 +126,7 @@ contract YutEscrow with Deployable, Ownable {
                     g.player1 = sender;
                     g.deposit1 = true;
                     g.depositCount = g.depositCount + 1;
-                    g.totalDeposited = g.totalDeposited + depositAmount;
+                    g.totalDeposited = g.totalDeposited + g.betAmount;
                     deposited = true;
                 }
             }
@@ -143,7 +143,7 @@ contract YutEscrow with Deployable, Ownable {
                     g.player2 = sender;
                     g.deposit2 = true;
                     g.depositCount = g.depositCount + 1;
-                    g.totalDeposited = g.totalDeposited + depositAmount;
+                    g.totalDeposited = g.totalDeposited + g.betAmount;
                     deposited = true;
                 }
             }
@@ -160,7 +160,7 @@ contract YutEscrow with Deployable, Ownable {
                     g.player3 = sender;
                     g.deposit3 = true;
                     g.depositCount = g.depositCount + 1;
-                    g.totalDeposited = g.totalDeposited + depositAmount;
+                    g.totalDeposited = g.totalDeposited + g.betAmount;
                     deposited = true;
                 }
             }
@@ -177,7 +177,7 @@ contract YutEscrow with Deployable, Ownable {
                     g.player4 = sender;
                     g.deposit4 = true;
                     g.depositCount = g.depositCount + 1;
-                    g.totalDeposited = g.totalDeposited + depositAmount;
+                    g.totalDeposited = g.totalDeposited + g.betAmount;
                     deposited = true;
                 }
             }
@@ -246,6 +246,9 @@ contract YutEscrow with Deployable, Ownable {
                 body: "YutNori Win".asComment()
             });
         }
+
+        // Clean up game data to save storage
+        self.games.set(msg.roomCode, null);
     }
 
     // Owner refunds all deposited players
@@ -296,6 +299,9 @@ contract YutEscrow with Deployable, Ownable {
                 body: "YutNori Refund".asComment()
             });
         }
+
+        // Clean up game data to save storage
+        self.games.set(msg.roomCode, null);
     }
 
     // Getters
