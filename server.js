@@ -966,6 +966,16 @@ async function handleBettingPayout(roomCode, winnerTeam) {
     if (failedPayouts.length > 0) {
       console.error(`[TON][ADMIN-ALERT] Room ${roomCode}: ${failedPayouts.length} payout(s) failed after all retries!`);
     }
+
+    // 자동 수수료 출금: 정산 후 컨트랙트에 쌓인 수수료를 오너 지갑으로 전송
+    try {
+      const withdrawn = await tonEscrow.withdrawFees();
+      if (withdrawn) {
+        console.log(`[TON] Auto fee withdrawal success for room ${roomCode}`);
+      }
+    } catch (feeErr) {
+      console.error(`[TON] Auto fee withdrawal failed:`, feeErr.message);
+    }
   } catch (err) {
     console.error('[TON] Payout error:', err);
     room.game.log.push('⚠️ 베팅 정산 중 오류 발생');
