@@ -207,6 +207,49 @@ app.get('/api/ton/deposit-tx', (req, res) => {
   res.json({ transaction: tx });
 });
 
+// === 관리자: 수수료 출금 API ===
+app.post('/api/ton/withdraw-fees', async (req, res) => {
+  // 관리자 인증: ADMIN_SECRET 환경변수와 일치해야 함
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (!adminSecret) return res.status(403).json({ error: 'ADMIN_SECRET not configured' });
+
+  const authHeader = req.headers['authorization'];
+  if (authHeader !== `Bearer ${adminSecret}`) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  if (!tonEscrow.isReady()) return res.status(503).json({ error: 'TON not initialized' });
+
+  try {
+    const amount = parseFloat(req.body.amount) || 0;
+    const balance = await tonEscrow.getContractBalance();
+    await tonEscrow.withdrawFees(amount);
+    res.json({ success: true, contractBalance: balance, requested: amount || 'all' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// === 관리자: 컨트랙트 잔액 조회 ===
+app.get('/api/ton/contract-balance', async (req, res) => {
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (!adminSecret) return res.status(403).json({ error: 'ADMIN_SECRET not configured' });
+
+  const authHeader = req.headers['authorization'];
+  if (authHeader !== `Bearer ${adminSecret}`) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  if (!tonEscrow.isReady()) return res.status(503).json({ error: 'TON not initialized' });
+
+  try {
+    const balance = await tonEscrow.getContractBalance();
+    res.json({ balance, unit: 'TON' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const rooms = {};
 
 // Track wallet addresses per room for betting

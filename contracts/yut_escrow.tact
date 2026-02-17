@@ -28,6 +28,10 @@ message Refund {
     roomCode: Int as uint64;
 }
 
+message WithdrawFees {
+    amount: Int as coins; // 0 = 전액 출금
+}
+
 // ============================================
 // Structs
 // ============================================
@@ -58,10 +62,12 @@ contract YutEscrow with Deployable, Ownable {
     owner: Address;
     games: map<Int, GameData>;
     platformFeeRate: Int as uint16; // basis points (500 = 5%)
+    version: Int as uint32;
 
-    init(owner: Address) {
+    init(owner: Address, version: Int) {
         self.owner = owner;
         self.platformFeeRate = 500; // 5%
+        self.version = version;
     }
 
     // Create a new game escrow
@@ -302,6 +308,28 @@ contract YutEscrow with Deployable, Ownable {
 
         // Clean up game data to save storage
         self.games.set(msg.roomCode, null);
+    }
+
+    // Owner withdraws accumulated platform fees
+    receive(msg: WithdrawFees) {
+        self.requireOwner();
+
+        // 최소 잔액: 컨트랙트 유지용 0.05 TON
+        let minBalance: Int = ton("0.05");
+        let available: Int = myBalance() - minBalance;
+        require(available > 0, "No fees to withdraw");
+
+        let withdrawAmount: Int = msg.amount;
+        if (withdrawAmount == 0 || withdrawAmount > available) {
+            withdrawAmount = available;
+        }
+
+        send(SendParameters{
+            to: self.owner,
+            value: withdrawAmount,
+            mode: SendPayGasSeparately,
+            body: "YutNori Fee Withdrawal".asComment()
+        });
     }
 
     // Getters

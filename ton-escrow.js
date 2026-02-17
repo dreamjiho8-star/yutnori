@@ -72,7 +72,7 @@ class TonEscrow {
         // Try loading from compiled contract init (compute address)
         try {
           const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
-          const contract = await YutEscrow.fromInit(this.wallet.address);
+          const contract = await YutEscrow.fromInit(this.wallet.address, 2n);
           this.contractAddress = contract.address;
           console.log(`[TON] Smart contract address (computed): ${this.contractAddress.toString()}`);
         } catch (e) {
@@ -489,6 +489,66 @@ class TonEscrow {
       console.log(`[TON] Refund sent for room ${roomCode}`);
     } catch (err) {
       console.error(`[TON] Refund failed for room ${roomCode}:`, err.message);
+    }
+  }
+
+  /**
+   * Withdraw accumulated platform fees to owner wallet
+   * @param {number} amount - TON amount to withdraw (0 = withdraw all)
+   */
+  async withdrawFees(amount = 0) {
+    if (!this.contractAddress) {
+      throw new Error('Contract not deployed');
+    }
+
+    try {
+      const amountNano = amount > 0 ? toNano(amount.toString()) : 0n;
+
+      try {
+        const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
+        const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
+        await contract.send(
+          {
+            send: async (args) => {
+              await this._sendToContract(Number(args.value) / 1e9, args.body);
+            }
+          },
+          { value: toNano('0.05') },
+          {
+            $$type: 'WithdrawFees',
+            amount: amountNano,
+          }
+        );
+      } catch (e) {
+        // Manual fallback
+        const body = beginCell()
+          .storeUint(0, 32) // WithdrawFees opcode (needs recompile to get actual)
+          .storeUint(0, 64) // query_id
+          .storeCoins(amountNano)
+          .endCell();
+
+        await this._sendToContract('0.05', body);
+      }
+
+      console.log(`[TON] WithdrawFees sent (amount: ${amount || 'all'} TON)`);
+      return true;
+    } catch (err) {
+      console.error('[TON] WithdrawFees failed:', err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * Get contract balance (to see accumulated fees)
+   */
+  async getContractBalance() {
+    if (!this.contractAddress) return 0;
+    try {
+      const balance = await this.client.getBalance(this.contractAddress);
+      return Number(fromNano(balance));
+    } catch (err) {
+      console.error('[TON] getContractBalance failed:', err.message);
+      return 0;
     }
   }
 

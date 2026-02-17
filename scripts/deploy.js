@@ -70,7 +70,8 @@ async function deploy() {
   }
 
   // Create contract
-  const contract = await YutEscrow.fromInit(ownerAddress);
+  const CONTRACT_VERSION = 2n; // v2: WithdrawFees 추가
+  const contract = await YutEscrow.fromInit(ownerAddress, CONTRACT_VERSION);
   const contractAddress = contract.address.toString();
 
   console.log(`Contract address: ${contractAddress}`);

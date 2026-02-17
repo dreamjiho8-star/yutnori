@@ -1095,6 +1095,53 @@ export function dictValueParserRefund(): DictionaryValue<Refund> {
     }
 }
 
+export type WithdrawFees = {
+    $$type: 'WithdrawFees';
+    amount: bigint;
+}
+
+export function storeWithdrawFees(src: WithdrawFees) {
+    return (builder: Builder) => {
+        const b_0 = builder;
+        b_0.storeUint(3947541004, 32);
+        b_0.storeCoins(src.amount);
+    };
+}
+
+export function loadWithdrawFees(slice: Slice) {
+    const sc_0 = slice;
+    if (sc_0.loadUint(32) !== 3947541004) { throw Error('Invalid prefix'); }
+    const _amount = sc_0.loadCoins();
+    return { $$type: 'WithdrawFees' as const, amount: _amount };
+}
+
+export function loadTupleWithdrawFees(source: TupleReader) {
+    const _amount = source.readBigNumber();
+    return { $$type: 'WithdrawFees' as const, amount: _amount };
+}
+
+export function loadGetterTupleWithdrawFees(source: TupleReader) {
+    const _amount = source.readBigNumber();
+    return { $$type: 'WithdrawFees' as const, amount: _amount };
+}
+
+export function storeTupleWithdrawFees(source: WithdrawFees) {
+    const builder = new TupleBuilder();
+    builder.writeNumber(source.amount);
+    return builder.build();
+}
+
+export function dictValueParserWithdrawFees(): DictionaryValue<WithdrawFees> {
+    return {
+        serialize: (src, builder) => {
+            builder.storeRef(beginCell().store(storeWithdrawFees(src)).endCell());
+        },
+        parse: (src) => {
+            return loadWithdrawFees(src.loadRef().beginParse());
+        }
+    }
+}
+
 export type GameData = {
     $$type: 'GameData';
     betAmount: bigint;
@@ -1232,6 +1279,7 @@ export type YutEscrow$Data = {
     owner: Address;
     games: Dictionary<bigint, GameData>;
     platformFeeRate: bigint;
+    version: bigint;
 }
 
 export function storeYutEscrow$Data(src: YutEscrow$Data) {
@@ -1240,6 +1288,7 @@ export function storeYutEscrow$Data(src: YutEscrow$Data) {
         b_0.storeAddress(src.owner);
         b_0.storeDict(src.games, Dictionary.Keys.BigInt(257), dictValueParserGameData());
         b_0.storeUint(src.platformFeeRate, 16);
+        b_0.storeUint(src.version, 32);
     };
 }
 
@@ -1248,21 +1297,24 @@ export function loadYutEscrow$Data(slice: Slice) {
     const _owner = sc_0.loadAddress();
     const _games = Dictionary.load(Dictionary.Keys.BigInt(257), dictValueParserGameData(), sc_0);
     const _platformFeeRate = sc_0.loadUintBig(16);
-    return { $$type: 'YutEscrow$Data' as const, owner: _owner, games: _games, platformFeeRate: _platformFeeRate };
+    const _version = sc_0.loadUintBig(32);
+    return { $$type: 'YutEscrow$Data' as const, owner: _owner, games: _games, platformFeeRate: _platformFeeRate, version: _version };
 }
 
 export function loadTupleYutEscrow$Data(source: TupleReader) {
     const _owner = source.readAddress();
     const _games = Dictionary.loadDirect(Dictionary.Keys.BigInt(257), dictValueParserGameData(), source.readCellOpt());
     const _platformFeeRate = source.readBigNumber();
-    return { $$type: 'YutEscrow$Data' as const, owner: _owner, games: _games, platformFeeRate: _platformFeeRate };
+    const _version = source.readBigNumber();
+    return { $$type: 'YutEscrow$Data' as const, owner: _owner, games: _games, platformFeeRate: _platformFeeRate, version: _version };
 }
 
 export function loadGetterTupleYutEscrow$Data(source: TupleReader) {
     const _owner = source.readAddress();
     const _games = Dictionary.loadDirect(Dictionary.Keys.BigInt(257), dictValueParserGameData(), source.readCellOpt());
     const _platformFeeRate = source.readBigNumber();
-    return { $$type: 'YutEscrow$Data' as const, owner: _owner, games: _games, platformFeeRate: _platformFeeRate };
+    const _version = source.readBigNumber();
+    return { $$type: 'YutEscrow$Data' as const, owner: _owner, games: _games, platformFeeRate: _platformFeeRate, version: _version };
 }
 
 export function storeTupleYutEscrow$Data(source: YutEscrow$Data) {
@@ -1270,6 +1322,7 @@ export function storeTupleYutEscrow$Data(source: YutEscrow$Data) {
     builder.writeAddress(source.owner);
     builder.writeCell(source.games.size > 0 ? beginCell().storeDictDirect(source.games, Dictionary.Keys.BigInt(257), dictValueParserGameData()).endCell() : null);
     builder.writeNumber(source.platformFeeRate);
+    builder.writeNumber(source.version);
     return builder.build();
 }
 
@@ -1287,20 +1340,22 @@ export function dictValueParserYutEscrow$Data(): DictionaryValue<YutEscrow$Data>
  type YutEscrow_init_args = {
     $$type: 'YutEscrow_init_args';
     owner: Address;
+    version: bigint;
 }
 
 function initYutEscrow_init_args(src: YutEscrow_init_args) {
     return (builder: Builder) => {
         const b_0 = builder;
         b_0.storeAddress(src.owner);
+        b_0.storeInt(src.version, 257);
     };
 }
 
-async function YutEscrow_init(owner: Address) {
-    const __code = Cell.fromHex('b5ee9c7241022501000916000114ff00f4a413f4bcf2c80b01020162021c04ccd001d072d721d200d200fa4021103450666f04f86102f862ed44d0d200019afa40f404d30f55206c1399fa400101d16d8101f4e204925f04e002d70d1ff2e0822182106ead1d33bae302218210b0d37ea6bae3022182102122392fbae302218210a62c7809ba03050d1303fe31d33ffa00d307305e40db3c810f8f26c2019326c1059170e2f2f48200aafd25c200f2f4218101012559f40d6fa192306ddf206e92306d8e87d0db3c6c1f6f0fe28200c879016ef2f48d0860000000000000000000000000000000000000000000000000000000000000000004707f70f82323107a106b5504707070705344152404016c54145450440355d08101010fc855e0db3cc910344140206e953059f45a30944133f415e258c87f01ca0055205023cef400cb0fc9ed541604f631d33f30228101012259f40d6fa192306ddf206e92306d8e87d0db3c6c1f6f0fe28200a2fb216eb3f2f46f2f814c1b2cf2f48171e72bb3f2f4f842f8416f24135f038200a863215612bef2f47026b3942f5611b99170e2e30020b39225b39170e2942f5611b99170e2e30020b39224b39170e2942f5611b99170e22406070800d870269453a3c7059170e292307fde25945393c7059170e292307fde24945383c7059170e292307fde8e418d086000000000000000000000000000000000000000000000000000000000000000000452b0c705917f9453a2c705e29f303538277f0ea451a5a00a0e50957fdedf00d870279453b3c7059170e292307fde25945393c7059170e292307fde24945383c7059170e292307fde8e418d086000000000000000000000000000000000000000000000000000000000000000000452a0c705917f945392c705e29f303437267f0ea451a4a00a0e50847fdedf04fa8e6c70279453b3c7059170e292307fde269453a3c7059170e292307fde24945383c7059170e292307fde8e418d08600000000000000000000000000000000000000000000000000000000000000000045290c705917f945382c705e29f303336257f0ea451a3a00a0e50737fdedfde20b39223b39170e29170e30de30f090a0b0c00082f5611b900de70279453b3c7059170e292307fde269453a3c7059170e292307fde25945393c7059170e292307fde926c218e418d08600000000000000000000000000000000000000000000000000000000000000000045280c705917f945372c705e29c3032357f0da45099a0080c7f926c21e2e200046c21016c8200a9b001f2f455d08101010fc855e0db3cc9103412206e953059f45a30944133f415e258c87f01ca0055205023cef400cb0fc9ed541603fe31d33ffa40d72c01916d93fa4001e201d72c01916d93fa4001e201d430d0d72c01916d93fa4001e201d307304678db3c218101012759f40d6fa192306ddf206e92306d8e87d0db3c6c1f6f0fe28200a2fb216eb3f2f46f2f814c1b500cf2f48116590ab31af2f48200ecef5616c200945616c1059170e2f2f410ac5e387f7015240e03f60950878101012247184516441403011110010fc855e0db3cc9103418206e953059f45a30944133f415e25351a8812710a90416a128a9048209c9c3805ca1718810385a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb0028c20116120f03ee93236eb39170e28ebd5304a1718810365a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb009133e227c20293256eb39170e29135e30d06c20393246eb39170e2925b32e30dc87f01ca0055205023cef400cb0fc9ed54121011017a5323a1718810385a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb0012017801a1718810355a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb0012001e000000005975744e6f72692057696e01b0e302018210946a98b6ba8e46d33f30c8018210aff90f5758cb1fcb3fc913f84270705003804201503304c8cf8580ca00cf8440ce01fa02806acf40f400c901fb00c87f01ca0055205023cef400cb0fc9ed54e05f04f2c0821404fa31d33f305023db3c218101012559f40d6fa192306ddf206e92306d8e87d0db3c6c1f6f0fe28200a2fb216eb3f2f46f2f3b8116590ab31af2f47f70810101c856100706111006105f10344cb0546aa0545a00561401561401561301561501111355e0db3cc9103c45e0206e953059f45a30944133f415e28209c9c38007152416170010f84223c705f2e084005250fefa021ccb071acb0718ca0016ca0014cb1f58fa02cece01c8ce12ce12ca0012ca0013ca00ca00cd04988ebd5376a17188103c5a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb009139e2049130e30d9137e30d061b18191a01765354a171885a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb001b01785da17188103a5a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb001b01a68ebba1718810365a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb00925b33e258c87f01ca0055205023cef400cb0fc9ed541b0024000000005975744e6f726920526566756e640201201d1f0145be28ef6a268690000cd7d207a026987aa903609ccfd200080e8b6c080fa716d9e3618c1e00022202016a20220145b031bb513434800066be903d0134c3d5481b04e67e900040745b60407d38b6cf1b0c6021000220016bb289fb513434800066be903d0134c3d5481b04e67e900040745b60407d389540b6cf1b0c481ba48c1b651bcbdbc3f8881ba48c1b77a023013a810101230259f40d6fa192306ddf206e92306d8e87d0db3c6c1f6f0fe2240068fa00d307d307d200d200d31ffa00fa40fa40d401d0fa40fa40d200d200d200d20030106f106e106d106c106b106a106910681067ac5b175a');
+async function YutEscrow_init(owner: Address, version: bigint) {
+    const __code = Cell.fromHex('b5ee9c7241022701000a46000114ff00f4a413f4bcf2c80b01020162021e04e0d001d072d721d200d200fa4021103450666f04f86102f862ed44d0d200019cfa40f404d30fd31f55306c148e10fa40810101d7005902d1016d8101f458e205925f05e003d70d1ff2e0822182106ead1d33bae302218210b0d37ea6bae3022182102122392fbae302218210a62c7809ba03050b1203fe31d33ffa00d3073010345e50db3c810f8f27c2019327c1059170e2f2f48200aafd26c200f2f4228101012659f40d6fa192306ddf206e92306d8e87d0db3c6c1f6f0fe28200c879016ef2f48d0860000000000000000000000000000000000000000000000000000000000000000004707f70f82323107b106c5504707070701c26040174534454145450440355d08101010fc855e0db3cc9413014206e953059f45a30944133f415e24003c87f01ca0055305034cef400cb0fcb1fc9ed541904f031d33f30218101012259f40d6fa192306ddf206e92306d8e87d0db3c6c1f6f0fe28200a2fb216eb3f2f46f2f814c1b2cf2f48171e72bb3f2f4f842f8416f24135f038200a863015611bef2f47025b39353efb99170e2e30020b39224b39170e29353efb99170e2e30020b39223b39170e29353efb99170e22606070800d87025945392c7059170e292307fde24945382c7059170e292307fde23945372c7059170e292307fde8e418d086000000000000000000000000000000000000000000000000000000000000000000452a0c705917f945391c705e29f303437227f0da4519fa0090d50847fdedf00d870269453a2c7059170e292307fde24945382c7059170e292307fde23945372c7059170e292307fde8e418d08600000000000000000000000000000000000000000000000000000000000000000045290c705917f945381c705e29f303336217f0da4519fa0090d50737fdedf01fa8e6b70269453a2c7059170e292307fde25945392c7059170e292307fde23945372c7059170e292307fde8e408d08600000000000000000000000000000000000000000000000000000000000000000045280c705917f945371c705e29e303235207f0da4519fa0094d6d7fdedfde20b39222b39170e29353efb99170e20901fe8e6d70269453a2c7059170e292307fde25945392c7059170e292307fde24945382c7059170e292307fde91318e408d08600000000000000000000000000000000000000000000000000000000000000000045270c705917f945361c705e29c3031347f0ca4518ea0080c7f9131e2e29131e28200a9b001f2f455d08101010f0a0154c855e0db3cc912206e953059f45a30944133f415e24003c87f01ca0055305034cef400cb0fcb1fc9ed541903fe31d33ffa40d72c01916d93fa4001e201d72c01916d93fa4001e201d430d0d72c01916d93fa4001e201d3073010374689db3c228101012759f40d6fa192306ddf206e92306d8e87d0db3c6c1f6f0fe28200a2fb216eb3f2f46f2f814c1b500cf2f48116590ab31af2f48200ecef5617c200945617c1059170e2f2f410ac5e381c260c03fa7f700950878101012247184516441403011110010fc855e0db3cc945505280206e953059f45a30944133f415e25da8812710a90414a12aa9048209c9c3805ca1718810395a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb002ac20119100d04d893286eb39170e28ebd5305a17188103b5a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb009138e229c20293266eb39170e29136e30d08c20393266eb39170e293363430e30d8101016dc8100e0f11017a5374a1718810395a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb0010017a5052a1718810375a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb0010001e000000005975744e6f72692057696e016e216e925b6d8e8a016f2f550e55e0db3cc9e2103512206e953059f45a30944133f415e25ac87f01ca0055305034cef400cb0fcb1fc9ed541902cce302218210eb4ab20cbae302018210946a98b6ba8e4ad33f30c8018210aff90f5758cb1fcb3fc9443012f84270705003804201503304c8cf8580ca00cf8440ce01fa02806acf40f400c901fb00c87f01ca0055305034cef400cb0fcb1fc9ed54e05f05f2c082131b04fa31d33f304134db3c228101012659f40d6fa192306ddf206e92306d8e87d0db3c6c1f6f0fe28200a2fb216eb3f2f46f2f3b8116590ab31af2f47f70810101c856100706111006105f10344cb0546aa0545a00561401561401561301561501111355e0db3cc94d5052f0206e953059f45a30944133f415e28209c9c380081c26191404988ebd5387a1718810345a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb009131e2059139e30d019130e30d18151617017a5365a17188103c5a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb001801765343a171885a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb001803da8ebc59a1718810365a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb0092355be28101016dc8216e925b6d8e8a016f2f550e55e0db3cc9e210344160206e953059f45a30944133f415e2401318191a0024000000005975744e6f726920526566756e64005250fefa021ccb071acb0718ca0016ca0014cb1f58fa02cece01c8ce12ce12ca0012ca0013ca00ca00cd0026c87f01ca0055305034cef400cb0fcb1fc9ed5402f631fa00304134db3c820afaf080f8276f1001a1815a0121c200f2f425c000917f935350bce291359130e27188250347775a6d6d40037fc8cf8580ca00cf8440ce01fa028069cf40025c6e016eb0935bcf819d58cf8680cf8480f400f400cf81e2f400c901fb005502c87f01ca0055305034cef400cb0fcb1fc9ed541c1d0010f84224c705f2e0840034000000005975744e6f726920466565205769746864726177616c0201201f210159be28ef6a268690000ce7d207a026987e98faa98360a47087d20408080eb802c816880b6c080fa2c716d9e3620c2000022302016a22240159b031bb5134348000673e903d0134c3f4c7d54c1b0523843e9020404075c01640b4405b60407d1638b6cf1b106023000221017fb289fb5134348000673e903d0134c3f4c7d54c1b0523843e9020404075c01640b4405b60407d16389540f6cf1b10481ba48c1b651bcbdbc3f8881ba48c1b77a025013a810101240259f40d6fa192306ddf206e92306d8e87d0db3c6c1f6f0fe2260068fa00d307d307d200d200d31ffa00fa40fa40d401d0fa40fa40d200d200d200d20030106f106e106d106c106b106a1069106810674e08010f');
     const builder = beginCell();
     builder.storeUint(0, 1);
-    initYutEscrow_init_args({ $$type: 'YutEscrow_init_args', owner })(builder);
+    initYutEscrow_init_args({ $$type: 'YutEscrow_init_args', owner, version })(builder);
     const __data = builder.endCell();
     return { code: __code, data: __data };
 }
@@ -1345,6 +1400,7 @@ export const YutEscrow_errors = {
     3983: { message: "Invalid player count" },
     5721: { message: "Already settled" },
     19483: { message: "Game not active" },
+    23041: { message: "No fees to withdraw" },
     29159: { message: "Game already settled" },
     41723: { message: "Game not found" },
     43107: { message: "Insufficient deposit amount" },
@@ -1394,6 +1450,7 @@ export const YutEscrow_errors_backward = {
     "Invalid player count": 3983,
     "Already settled": 5721,
     "Game not active": 19483,
+    "No fees to withdraw": 23041,
     "Game already settled": 29159,
     "Game not found": 41723,
     "Insufficient deposit amount": 43107,
@@ -1423,8 +1480,9 @@ const YutEscrow_types: ABIType[] = [
     {"name":"Deposit","header":2966650534,"fields":[{"name":"roomCode","type":{"kind":"simple","type":"uint","optional":false,"format":64}}]},
     {"name":"SettlePayout","header":555890991,"fields":[{"name":"roomCode","type":{"kind":"simple","type":"uint","optional":false,"format":64}},{"name":"winner1","type":{"kind":"simple","type":"address","optional":false}},{"name":"winner2","type":{"kind":"simple","type":"address","optional":true}},{"name":"winner3","type":{"kind":"simple","type":"address","optional":true}},{"name":"winner4","type":{"kind":"simple","type":"address","optional":true}},{"name":"winnerCount","type":{"kind":"simple","type":"uint","optional":false,"format":8}}]},
     {"name":"Refund","header":2787932169,"fields":[{"name":"roomCode","type":{"kind":"simple","type":"uint","optional":false,"format":64}}]},
+    {"name":"WithdrawFees","header":3947541004,"fields":[{"name":"amount","type":{"kind":"simple","type":"uint","optional":false,"format":"coins"}}]},
     {"name":"GameData","header":null,"fields":[{"name":"betAmount","type":{"kind":"simple","type":"uint","optional":false,"format":"coins"}},{"name":"playerCount","type":{"kind":"simple","type":"uint","optional":false,"format":8}},{"name":"depositCount","type":{"kind":"simple","type":"uint","optional":false,"format":8}},{"name":"gameActive","type":{"kind":"simple","type":"bool","optional":false}},{"name":"settled","type":{"kind":"simple","type":"bool","optional":false}},{"name":"createdAt","type":{"kind":"simple","type":"uint","optional":false,"format":32}},{"name":"totalDeposited","type":{"kind":"simple","type":"uint","optional":false,"format":"coins"}},{"name":"player1","type":{"kind":"simple","type":"address","optional":false}},{"name":"player2","type":{"kind":"simple","type":"address","optional":false}},{"name":"player3","type":{"kind":"simple","type":"address","optional":false}},{"name":"player4","type":{"kind":"simple","type":"address","optional":false}},{"name":"deposit1","type":{"kind":"simple","type":"bool","optional":false}},{"name":"deposit2","type":{"kind":"simple","type":"bool","optional":false}},{"name":"deposit3","type":{"kind":"simple","type":"bool","optional":false}},{"name":"deposit4","type":{"kind":"simple","type":"bool","optional":false}}]},
-    {"name":"YutEscrow$Data","header":null,"fields":[{"name":"owner","type":{"kind":"simple","type":"address","optional":false}},{"name":"games","type":{"kind":"dict","key":"int","value":"GameData","valueFormat":"ref"}},{"name":"platformFeeRate","type":{"kind":"simple","type":"uint","optional":false,"format":16}}]},
+    {"name":"YutEscrow$Data","header":null,"fields":[{"name":"owner","type":{"kind":"simple","type":"address","optional":false}},{"name":"games","type":{"kind":"dict","key":"int","value":"GameData","valueFormat":"ref"}},{"name":"platformFeeRate","type":{"kind":"simple","type":"uint","optional":false,"format":16}},{"name":"version","type":{"kind":"simple","type":"uint","optional":false,"format":32}}]},
 ]
 
 const YutEscrow_opcodes = {
@@ -1437,6 +1495,7 @@ const YutEscrow_opcodes = {
     "Deposit": 2966650534,
     "SettlePayout": 555890991,
     "Refund": 2787932169,
+    "WithdrawFees": 3947541004,
 }
 
 const YutEscrow_getters: ABIGetter[] = [
@@ -1456,6 +1515,7 @@ const YutEscrow_receivers: ABIReceiver[] = [
     {"receiver":"internal","message":{"kind":"typed","type":"Deposit"}},
     {"receiver":"internal","message":{"kind":"typed","type":"SettlePayout"}},
     {"receiver":"internal","message":{"kind":"typed","type":"Refund"}},
+    {"receiver":"internal","message":{"kind":"typed","type":"WithdrawFees"}},
     {"receiver":"internal","message":{"kind":"typed","type":"Deploy"}},
 ]
 
@@ -1466,12 +1526,12 @@ export class YutEscrow implements Contract {
     public static readonly errors = YutEscrow_errors_backward;
     public static readonly opcodes = YutEscrow_opcodes;
     
-    static async init(owner: Address) {
-        return await YutEscrow_init(owner);
+    static async init(owner: Address, version: bigint) {
+        return await YutEscrow_init(owner, version);
     }
     
-    static async fromInit(owner: Address) {
-        const __gen_init = await YutEscrow_init(owner);
+    static async fromInit(owner: Address, version: bigint) {
+        const __gen_init = await YutEscrow_init(owner, version);
         const address = contractAddress(0, __gen_init);
         return new YutEscrow(address, __gen_init);
     }
@@ -1494,7 +1554,7 @@ export class YutEscrow implements Contract {
         this.init = init;
     }
     
-    async send(provider: ContractProvider, via: Sender, args: { value: bigint, bounce?: boolean| null | undefined }, message: CreateGame | Deposit | SettlePayout | Refund | Deploy) {
+    async send(provider: ContractProvider, via: Sender, args: { value: bigint, bounce?: boolean| null | undefined }, message: CreateGame | Deposit | SettlePayout | Refund | WithdrawFees | Deploy) {
         
         let body: Cell | null = null;
         if (message && typeof message === 'object' && !(message instanceof Slice) && message.$$type === 'CreateGame') {
@@ -1508,6 +1568,9 @@ export class YutEscrow implements Contract {
         }
         if (message && typeof message === 'object' && !(message instanceof Slice) && message.$$type === 'Refund') {
             body = beginCell().store(storeRefund(message)).endCell();
+        }
+        if (message && typeof message === 'object' && !(message instanceof Slice) && message.$$type === 'WithdrawFees') {
+            body = beginCell().store(storeWithdrawFees(message)).endCell();
         }
         if (message && typeof message === 'object' && !(message instanceof Slice) && message.$$type === 'Deploy') {
             body = beginCell().store(storeDeploy(message)).endCell();

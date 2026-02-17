@@ -32,6 +32,12 @@ builder $GameData$_store(builder build_0, (int, int, int, int, int, int, int, sl
 ;; $GameData$_store_cell
 cell $GameData$_store_cell((int, int, int, int, int, int, int, slice, slice, slice, slice, int, int, int, int) v, builder b) inline;
 
+;; $GameData$_not_null
+((int, int, int, int, int, int, int, slice, slice, slice, slice, int, int, int, int)) $GameData$_not_null(tuple v) inline;
+
+;; $GameData$_store_opt
+cell $GameData$_store_opt(tuple v, builder b) inline;
+
 ;; $GameData$_load
 (slice, ((int, int, int, int, int, int, int, slice, slice, slice, slice, int, int, int, int))) $GameData$_load(slice sc_0) inline_ref;
 
@@ -42,16 +48,13 @@ tuple $GameData$_as_optional((int, int, int, int, int, int, int, slice, slice, s
 tuple $GameData$_load_opt(cell cl) inline;
 
 ;; $YutEscrow$_store
-builder $YutEscrow$_store(builder build_0, (slice, cell, int) v) inline;
+builder $YutEscrow$_store(builder build_0, (slice, cell, int, int) v) inline;
 
 ;; $YutEscrow$_load
-(slice, ((slice, cell, int))) $YutEscrow$_load(slice sc_0) inline;
+(slice, ((slice, cell, int, int))) $YutEscrow$_load(slice sc_0) inline;
 
 ;; $Context$_get_value
 _ $Context$_get_value((int, slice, int, slice) v) inline;
-
-;; $GameData$_not_null
-((int, int, int, int, int, int, int, slice, slice, slice, slice, int, int, int, int)) $GameData$_not_null(tuple v) inline;
 
 ;; $GameData$_to_tuple
 tuple $GameData$_to_tuple(((int, int, int, int, int, int, int, slice, slice, slice, slice, int, int, int, int)) v) inline;
@@ -63,34 +66,34 @@ tuple $GameData$_to_opt_tuple(tuple v) inline;
 tuple $GameData$_to_opt_external(tuple v) inline;
 
 ;; $YutEscrow$init$_load
-(slice, ((slice))) $YutEscrow$init$_load(slice sc_0) inline;
+(slice, ((slice, int))) $YutEscrow$init$_load(slice sc_0) inline;
 
 ;; $YutEscrow$_contract_init
-(slice, cell, int) $YutEscrow$_contract_init(slice $owner) impure inline;
+(slice, cell, int, int) $YutEscrow$_contract_init(slice $owner, int $version) impure inline;
 
 ;; $YutEscrow$_contract_load
-(slice, cell, int) $YutEscrow$_contract_load() impure inline;
+(slice, cell, int, int) $YutEscrow$_contract_load() impure inline;
 
 ;; $YutEscrow$_contract_store
-() $YutEscrow$_contract_store((slice, cell, int) v) impure inline;
+() $YutEscrow$_contract_store((slice, cell, int, int) v) impure inline;
 
 ;; $YutEscrow$_fun_gameData
-((slice, cell, int), tuple) $YutEscrow$_fun_gameData((slice, cell, int) $self, int $roomCode) impure inline_ref;
+((slice, cell, int, int), tuple) $YutEscrow$_fun_gameData((slice, cell, int, int) $self, int $roomCode) impure inline_ref;
 
 ;; $YutEscrow$_fun_platformFeeRate
-((slice, cell, int), int) $YutEscrow$_fun_platformFeeRate((slice, cell, int) $self) impure inline_ref;
+((slice, cell, int, int), int) $YutEscrow$_fun_platformFeeRate((slice, cell, int, int) $self) impure inline_ref;
 
 ;; $MessageParameters$_constructor_bounce_to_value_mode_body
 ((int, cell, int, slice, int)) $MessageParameters$_constructor_bounce_to_value_mode_body(int $bounce, slice $to, int $value, int $mode, cell $body) inline;
 
 ;; $YutEscrow$_fun_notify
-((slice, cell, int), ()) $YutEscrow$_fun_notify((slice, cell, int) $self, cell $body) impure inline;
+((slice, cell, int, int), ()) $YutEscrow$_fun_notify((slice, cell, int, int) $self, cell $body) impure inline;
 
 ;; $YutEscrow$_fun_requireOwner
-((slice, cell, int), ()) $YutEscrow$_fun_requireOwner((slice, cell, int) $self) impure inline_ref;
+((slice, cell, int, int), ()) $YutEscrow$_fun_requireOwner((slice, cell, int, int) $self) impure inline_ref;
 
 ;; $YutEscrow$_fun_owner
-((slice, cell, int), slice) $YutEscrow$_fun_owner((slice, cell, int) $self) impure inline_ref;
+((slice, cell, int, int), slice) $YutEscrow$_fun_owner((slice, cell, int, int) $self) impure inline_ref;
 
 ;; $GameData$_constructor_betAmount_playerCount_depositCount_gameActive_settled_createdAt_totalDeposited_player1_player2_player3_player4_deposit1_deposit2_deposit3_deposit4
 ((int, int, int, int, int, int, int, slice, slice, slice, slice, int, int, int, int)) $GameData$_constructor_betAmount_playerCount_depositCount_gameActive_settled_createdAt_totalDeposited_player1_player2_player3_player4_deposit1_deposit2_deposit3_deposit4(int $betAmount, int $playerCount, int $depositCount, int $gameActive, int $settled, int $createdAt, int $totalDeposited, slice $player1, slice $player2, slice $player3, slice $player4, int $deposit1, int $deposit2, int $deposit3, int $deposit4) inline;
@@ -261,8 +264,8 @@ int $global_now() impure asm """
     NOW
 """;
 
-((slice, cell, int), ()) $YutEscrow$_fun_notify((slice, cell, int) $self, cell $body) impure inline {
-    var (($self'owner, $self'games, $self'platformFeeRate)) = $self;
+((slice, cell, int, int), ()) $YutEscrow$_fun_notify((slice, cell, int, int) $self, cell $body) impure inline {
+    var (($self'owner, $self'games, $self'platformFeeRate, $self'version)) = $self;
     slice $to = __tact_context_get_sender();
     int $bounce = false;
     if (false) {
@@ -271,23 +274,23 @@ int $global_now() impure asm """
         if (($balanceBeforeMessage < 0)) {
             $global_nativeReserve(0, 0);
             $global_message($MessageParameters$_constructor_bounce_to_value_mode_body($bounce, $to, 0, 130, $body));
-            return (($self'owner, $self'games, $self'platformFeeRate), ());
+            return (($self'owner, $self'games, $self'platformFeeRate, $self'version), ());
         }
     }
     $global_message($MessageParameters$_constructor_bounce_to_value_mode_body($bounce, $to, 0, 66, $body));
-    return (($self'owner, $self'games, $self'platformFeeRate), ());
+    return (($self'owner, $self'games, $self'platformFeeRate, $self'version), ());
 }
 
-((slice, cell, int), ()) $YutEscrow$_fun_requireOwner((slice, cell, int) $self) impure inline_ref {
-    var (($self'owner, $self'games, $self'platformFeeRate)) = $self;
+((slice, cell, int, int), ()) $YutEscrow$_fun_requireOwner((slice, cell, int, int) $self) impure inline_ref {
+    var (($self'owner, $self'games, $self'platformFeeRate, $self'version)) = $self;
     throw_unless(132, ( equal_slices_bits(__tact_context_get_sender(), $self'owner) ));
-    return (($self'owner, $self'games, $self'platformFeeRate), ());
+    return (($self'owner, $self'games, $self'platformFeeRate, $self'version), ());
 }
 
-((slice, cell, int), slice) $YutEscrow$_fun_owner((slice, cell, int) $self) impure inline_ref {
-    var (($self'owner, $self'games, $self'platformFeeRate)) = $self;
+((slice, cell, int, int), slice) $YutEscrow$_fun_owner((slice, cell, int, int) $self) impure inline_ref {
+    var (($self'owner, $self'games, $self'platformFeeRate, $self'version)) = $self;
     var $fresh$ret_2 = $self'owner;
-    return (($self'owner, $self'games, $self'platformFeeRate), $fresh$ret_2);
+    return (($self'owner, $self'games, $self'platformFeeRate, $self'version), $fresh$ret_2);
 }
 
 ;; YutEscrow_YutEscrow.constants.fc
@@ -304,6 +307,11 @@ cell __gen_cell_cell_e926158bc9dfcf04f52c8aff76218ee61a810be37bdf70e8a7a39e98233
 ;; Cell RlywUBSt0U5zeLkmJegwOc2UjSC2inYWgzSaihn1k08=
 cell __gen_cell_cell_465cb05014add14e7378b92625e83039cd948d20b68a761683349a8a19f5934f() asm """
     B{b5ee9c72410101010014000024000000005975744e6f726920526566756e648cf1122b} B>boc PUSHREF
+""";
+
+;; Cell tertkxWpwPP7BK7X49hQeQyi6TkSZ1Xv6hSVa9uYXSI=
+cell __gen_cell_cell_b5eaed9315a9c0f3fb04aed7e3d850790ca2e939126755efea14956bdb985d22() asm """
+    B{b5ee9c7241010101001c000034000000005975744e6f726920466565205769746864726177616c6fedb816} B>boc PUSHREF
 """;
 
 ;; YutEscrow_YutEscrow.storage.fc
@@ -387,6 +395,18 @@ cell $GameData$_store_cell((int, int, int, int, int, int, int, slice, slice, sli
     return $GameData$_store(b, v).end_cell();
 }
 
+((int, int, int, int, int, int, int, slice, slice, slice, slice, int, int, int, int)) $GameData$_not_null(tuple v) inline {
+    var (int vvv'betAmount, int vvv'playerCount, int vvv'depositCount, int vvv'gameActive, int vvv'settled, int vvv'createdAt, int vvv'totalDeposited, slice vvv'player1, slice vvv'player2, slice vvv'player3, slice vvv'player4, int vvv'deposit1, int vvv'deposit2, int vvv'deposit3, int vvv'deposit4) = __tact_tuple_destroy_15(v);
+    return (vvv'betAmount, vvv'playerCount, vvv'depositCount, vvv'gameActive, vvv'settled, vvv'createdAt, vvv'totalDeposited, vvv'player1, vvv'player2, vvv'player3, vvv'player4, vvv'deposit1, vvv'deposit2, vvv'deposit3, vvv'deposit4);
+}
+
+cell $GameData$_store_opt(tuple v, builder b) inline {
+    if (null?(v)) {
+        return null();
+    }
+    return $GameData$_store_cell($GameData$_not_null(v), b);
+}
+
 (slice, ((int, int, int, int, int, int, int, slice, slice, slice, slice, int, int, int, int))) $GameData$_load(slice sc_0) inline_ref {
     var v'betAmount = sc_0~load_varuint16();
     var v'playerCount = sc_0~load_uint(8);
@@ -420,11 +440,6 @@ tuple $GameData$_load_opt(cell cl) inline {
     return $GameData$_as_optional(sc~$GameData$_load());
 }
 
-((int, int, int, int, int, int, int, slice, slice, slice, slice, int, int, int, int)) $GameData$_not_null(tuple v) inline {
-    var (int vvv'betAmount, int vvv'playerCount, int vvv'depositCount, int vvv'gameActive, int vvv'settled, int vvv'createdAt, int vvv'totalDeposited, slice vvv'player1, slice vvv'player2, slice vvv'player3, slice vvv'player4, int vvv'deposit1, int vvv'deposit2, int vvv'deposit3, int vvv'deposit4) = __tact_tuple_destroy_15(v);
-    return (vvv'betAmount, vvv'playerCount, vvv'depositCount, vvv'gameActive, vvv'settled, vvv'createdAt, vvv'totalDeposited, vvv'player1, vvv'player2, vvv'player3, vvv'player4, vvv'deposit1, vvv'deposit2, vvv'deposit3, vvv'deposit4);
-}
-
 tuple $GameData$_to_tuple(((int, int, int, int, int, int, int, slice, slice, slice, slice, int, int, int, int)) v) inline {
     var (v'betAmount, v'playerCount, v'depositCount, v'gameActive, v'settled, v'createdAt, v'totalDeposited, v'player1, v'player2, v'player3, v'player4, v'deposit1, v'deposit2, v'deposit3, v'deposit4) = v;
     return __tact_tuple_create_15(v'betAmount, v'playerCount, v'depositCount, v'gameActive, v'settled, v'createdAt, v'totalDeposited, v'player1, v'player2, v'player3, v'player4, v'deposit1, v'deposit2, v'deposit3, v'deposit4);
@@ -450,43 +465,46 @@ tuple $GameData$_to_opt_external(tuple v) inline {
 
 ;;
 ;; Type: YutEscrow
-;; TLB: _ owner:address games:dict<int, ^GameData{betAmount:coins,playerCount:uint8,depositCount:uint8,gameActive:bool,settled:bool,createdAt:uint32,totalDeposited:coins,player1:address,player2:address,player3:address,player4:address,deposit1:bool,deposit2:bool,deposit3:bool,deposit4:bool}> platformFeeRate:uint16 = YutEscrow
+;; TLB: _ owner:address games:dict<int, ^GameData{betAmount:coins,playerCount:uint8,depositCount:uint8,gameActive:bool,settled:bool,createdAt:uint32,totalDeposited:coins,player1:address,player2:address,player3:address,player4:address,deposit1:bool,deposit2:bool,deposit3:bool,deposit4:bool}> platformFeeRate:uint16 version:uint32 = YutEscrow
 ;;
 
-builder $YutEscrow$_store(builder build_0, (slice, cell, int) v) inline {
-    var (v'owner, v'games, v'platformFeeRate) = v;
+builder $YutEscrow$_store(builder build_0, (slice, cell, int, int) v) inline {
+    var (v'owner, v'games, v'platformFeeRate, v'version) = v;
     build_0 = build_0.store_slice(v'owner);
     build_0 = build_0.store_dict(v'games);
     build_0 = build_0.store_uint(v'platformFeeRate, 16);
+    build_0 = build_0.store_uint(v'version, 32);
     return build_0;
 }
 
-(slice, ((slice, cell, int))) $YutEscrow$_load(slice sc_0) inline {
+(slice, ((slice, cell, int, int))) $YutEscrow$_load(slice sc_0) inline {
     var v'owner = sc_0~load_msg_addr();
     var v'games = sc_0~load_dict();
     var v'platformFeeRate = sc_0~load_uint(16);
-    return (sc_0, (v'owner, v'games, v'platformFeeRate));
+    var v'version = sc_0~load_uint(32);
+    return (sc_0, (v'owner, v'games, v'platformFeeRate, v'version));
 }
 
-(slice, ((slice))) $YutEscrow$init$_load(slice sc_0) inline {
+(slice, ((slice, int))) $YutEscrow$init$_load(slice sc_0) inline {
     var v'owner = sc_0~load_msg_addr();
-    return (sc_0, (v'owner));
+    var v'version = sc_0~load_int(257);
+    return (sc_0, (v'owner, v'version));
 }
 
-(slice, cell, int) $YutEscrow$_contract_load() impure inline {
+(slice, cell, int, int) $YutEscrow$_contract_load() impure inline {
     slice $sc = get_data().begin_parse();
     int $loaded = $sc~load_int(1);
     if ($loaded) {
         return $sc~$YutEscrow$_load();
     }
     else {
-        (slice $owner) = $sc~$YutEscrow$init$_load();
+        (slice $owner, int $version) = $sc~$YutEscrow$init$_load();
         $sc.end_parse();
-        return $YutEscrow$_contract_init($owner);
+        return $YutEscrow$_contract_init($owner, $version);
     }
 }
 
-() $YutEscrow$_contract_store((slice, cell, int) v) impure inline {
+() $YutEscrow$_contract_store((slice, cell, int, int) v) impure inline {
     builder b = begin_cell();
     b = b.store_int(true, 1);
     b = $YutEscrow$_store(b, v);
@@ -497,23 +515,24 @@ builder $YutEscrow$_store(builder build_0, (slice, cell, int) v) inline {
 ;; Contract YutEscrow functions
 ;;
 
-(slice, cell, int) $YutEscrow$_contract_init(slice $owner) impure inline {
-    var (($self'owner, $self'games, $self'platformFeeRate)) = (null(), null(), null());
+(slice, cell, int, int) $YutEscrow$_contract_init(slice $owner, int $version) impure inline {
+    var (($self'owner, $self'games, $self'platformFeeRate, $self'version)) = (null(), null(), null(), null());
     $self'owner = $owner;
     $self'platformFeeRate = 500;
-    return ($self'owner, $self'games, $self'platformFeeRate);
+    $self'version = $version;
+    return ($self'owner, $self'games, $self'platformFeeRate, $self'version);
 }
 
-((slice, cell, int), tuple) $YutEscrow$_fun_gameData((slice, cell, int) $self, int $roomCode) impure inline_ref {
-    var (($self'owner, $self'games, $self'platformFeeRate)) = $self;
+((slice, cell, int, int), tuple) $YutEscrow$_fun_gameData((slice, cell, int, int) $self, int $roomCode) impure inline_ref {
+    var (($self'owner, $self'games, $self'platformFeeRate, $self'version)) = $self;
     var $fresh$ret_0 = $GameData$_load_opt(__tact_dict_get_int_cell($self'games, 257, $roomCode));
-    return (($self'owner, $self'games, $self'platformFeeRate), $fresh$ret_0);
+    return (($self'owner, $self'games, $self'platformFeeRate, $self'version), $fresh$ret_0);
 }
 
-((slice, cell, int), int) $YutEscrow$_fun_platformFeeRate((slice, cell, int) $self) impure inline_ref {
-    var (($self'owner, $self'games, $self'platformFeeRate)) = $self;
+((slice, cell, int, int), int) $YutEscrow$_fun_platformFeeRate((slice, cell, int, int) $self) impure inline_ref {
+    var (($self'owner, $self'games, $self'platformFeeRate, $self'version)) = $self;
     var $fresh$ret_1 = $self'platformFeeRate;
-    return (($self'owner, $self'games, $self'platformFeeRate), $fresh$ret_1);
+    return (($self'owner, $self'games, $self'platformFeeRate, $self'version), $fresh$ret_1);
 }
 
 ;;
@@ -559,7 +578,7 @@ _ %owner() method_id(83229) {
     __tact_context_sender = msg_sender_addr;
     
     ;; Load contract data
-    var ($self'owner, $self'games, $self'platformFeeRate) = $YutEscrow$_contract_load();
+    var ($self'owner, $self'games, $self'platformFeeRate, $self'version) = $YutEscrow$_contract_load();
     
     ;; Handle bounced messages
     if (msg_bounced) { return (); }
@@ -569,7 +588,7 @@ _ %owner() method_id(83229) {
         var $msg'roomCode = in_msg~load_uint(64);
         var $msg'betAmount = in_msg~load_varuint16();
         var $msg'playerCount = in_msg~load_uint(8);
-        ($self'owner, $self'games, $self'platformFeeRate)~$YutEscrow$_fun_requireOwner();
+        ($self'owner, $self'games, $self'platformFeeRate, $self'version)~$YutEscrow$_fun_requireOwner();
         throw_unless(3983, ( (($msg'playerCount >= 2)) ? (($msg'playerCount <= 4)) : (false) ));
         throw_unless(43773, ($msg'betAmount > 0));
         tuple $existing = $GameData$_load_opt(__tact_dict_get_int_cell($self'games, 257, $msg'roomCode));
@@ -577,7 +596,7 @@ _ %owner() method_id(83229) {
         slice $zeroAddr = __gen_slice_address_61ab4641fa30d9310391025086eec65d200d79268e1b7cd402565e01ba64be3c();
         var ($game'betAmount, $game'playerCount, $game'depositCount, $game'gameActive, $game'settled, $game'createdAt, $game'totalDeposited, $game'player1, $game'player2, $game'player3, $game'player4, $game'deposit1, $game'deposit2, $game'deposit3, $game'deposit4) = $GameData$_constructor_betAmount_playerCount_depositCount_gameActive_settled_createdAt_totalDeposited_player1_player2_player3_player4_deposit1_deposit2_deposit3_deposit4($msg'betAmount, $msg'playerCount, 0, true, false, $global_now(), 0, $zeroAddr, $zeroAddr, $zeroAddr, $zeroAddr, false, false, false, false);
         $self'games~__tact_dict_set_int_cell(257, $msg'roomCode, $GameData$_store_cell(($game'betAmount, $game'playerCount, $game'depositCount, $game'gameActive, $game'settled, $game'createdAt, $game'totalDeposited, $game'player1, $game'player2, $game'player3, $game'player4, $game'deposit1, $game'deposit2, $game'deposit3, $game'deposit4), begin_cell()));
-        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate));
+        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate, $self'version));
         return ();
     }
     
@@ -609,7 +628,7 @@ _ %owner() method_id(83229) {
                     $g'player1 = $sender;
                     $g'deposit1 = true;
                     $g'depositCount = ($g'depositCount + 1);
-                    $g'totalDeposited = ($g'totalDeposited + $depositAmount);
+                    $g'totalDeposited = ($g'totalDeposited + $g'betAmount);
                     $deposited = true;
                 }
             }
@@ -630,7 +649,7 @@ _ %owner() method_id(83229) {
                     $g'player2 = $sender;
                     $g'deposit2 = true;
                     $g'depositCount = ($g'depositCount + 1);
-                    $g'totalDeposited = ($g'totalDeposited + $depositAmount);
+                    $g'totalDeposited = ($g'totalDeposited + $g'betAmount);
                     $deposited = true;
                 }
             }
@@ -651,7 +670,7 @@ _ %owner() method_id(83229) {
                     $g'player3 = $sender;
                     $g'deposit3 = true;
                     $g'depositCount = ($g'depositCount + 1);
-                    $g'totalDeposited = ($g'totalDeposited + $depositAmount);
+                    $g'totalDeposited = ($g'totalDeposited + $g'betAmount);
                     $deposited = true;
                 }
             }
@@ -672,14 +691,14 @@ _ %owner() method_id(83229) {
                     $g'player4 = $sender;
                     $g'deposit4 = true;
                     $g'depositCount = ($g'depositCount + 1);
-                    $g'totalDeposited = ($g'totalDeposited + $depositAmount);
+                    $g'totalDeposited = ($g'totalDeposited + $g'betAmount);
                     $deposited = true;
                 }
             }
         }
         throw_unless(43440, $deposited);
         $self'games~__tact_dict_set_int_cell(257, $msg'roomCode, $GameData$_store_cell(($g'betAmount, $g'playerCount, $g'depositCount, $g'gameActive, $g'settled, $g'createdAt, $g'totalDeposited, $g'player1, $g'player2, $g'player3, $g'player4, $g'deposit1, $g'deposit2, $g'deposit3, $g'deposit4), begin_cell()));
-        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate));
+        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate, $self'version));
         return ();
     }
     
@@ -692,7 +711,7 @@ _ %owner() method_id(83229) {
         slice sc_1 = in_msg~load_ref().begin_parse();
         var $msg'winner4 = sc_1~__tact_load_address_opt();
         var $msg'winnerCount = sc_1~load_uint(8);
-        ($self'owner, $self'games, $self'platformFeeRate)~$YutEscrow$_fun_requireOwner();
+        ($self'owner, $self'games, $self'platformFeeRate, $self'version)~$YutEscrow$_fun_requireOwner();
         tuple $game = $GameData$_load_opt(__tact_dict_get_int_cell($self'games, 257, $msg'roomCode));
         throw_unless(41723, (~ null?($game)));
         var ($g'betAmount, $g'playerCount, $g'depositCount, $g'gameActive, $g'settled, $g'createdAt, $g'totalDeposited, $g'player1, $g'player2, $g'player3, $g'player4, $g'deposit1, $g'deposit2, $g'deposit3, $g'deposit4) = $GameData$_not_null($game);
@@ -717,14 +736,15 @@ _ %owner() method_id(83229) {
         if (( (($msg'winnerCount >= 4)) ? ((~ null?($msg'winner4))) : (false) )) {
             $global_send($SendParameters$_constructor_to_value_mode_body($msg'winner4, ($perWinner - $gasPerSend), 1, __gen_cell_cell_e926158bc9dfcf04f52c8aff76218ee61a810be37bdf70e8a7a39e9823366d89()));
         }
-        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate));
+        $self'games~__tact_dict_set_int_cell(257, $msg'roomCode, $GameData$_store_opt(null(), begin_cell()));
+        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate, $self'version));
         return ();
     }
     
     ;; Receive Refund message
     if (op == 2787932169) {
         var $msg'roomCode = in_msg~load_uint(64);
-        ($self'owner, $self'games, $self'platformFeeRate)~$YutEscrow$_fun_requireOwner();
+        ($self'owner, $self'games, $self'platformFeeRate, $self'version)~$YutEscrow$_fun_requireOwner();
         tuple $game = $GameData$_load_opt(__tact_dict_get_int_cell($self'games, 257, $msg'roomCode));
         throw_unless(41723, (~ null?($game)));
         var ($g'betAmount, $g'playerCount, $g'depositCount, $g'gameActive, $g'settled, $g'createdAt, $g'totalDeposited, $g'player1, $g'player2, $g'player3, $g'player4, $g'deposit1, $g'deposit2, $g'deposit3, $g'deposit4) = $GameData$_not_null($game);
@@ -745,15 +765,32 @@ _ %owner() method_id(83229) {
         if ($g'deposit4) {
             $global_send($SendParameters$_constructor_to_value_mode_body($g'player4, ($g'betAmount - $gasPerSend), 1, __gen_cell_cell_465cb05014add14e7378b92625e83039cd948d20b68a761683349a8a19f5934f()));
         }
-        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate));
+        $self'games~__tact_dict_set_int_cell(257, $msg'roomCode, $GameData$_store_opt(null(), begin_cell()));
+        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate, $self'version));
+        return ();
+    }
+    
+    ;; Receive WithdrawFees message
+    if (op == 3947541004) {
+        var $msg'amount = in_msg~load_varuint16();
+        ($self'owner, $self'games, $self'platformFeeRate, $self'version)~$YutEscrow$_fun_requireOwner();
+        int $minBalance = 50000000;
+        int $available = ($global_myBalance() - $minBalance);
+        throw_unless(23041, ($available > 0));
+        int $withdrawAmount = $msg'amount;
+        if (( (($withdrawAmount == 0)) ? (true) : (($withdrawAmount > $available)) )) {
+            $withdrawAmount = $available;
+        }
+        $global_send($SendParameters$_constructor_to_value_mode_body($self'owner, $withdrawAmount, 1, __gen_cell_cell_b5eaed9315a9c0f3fb04aed7e3d850790ca2e939126755efea14956bdb985d22()));
+        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate, $self'version));
         return ();
     }
     
     ;; Receive Deploy message
     if (op == 0x946a98b6) {
         var $deploy'queryId = in_msg~load_uint(64);
-        ($self'owner, $self'games, $self'platformFeeRate)~$YutEscrow$_fun_notify($DeployOk$_store_cell($DeployOk$_constructor_queryId($deploy'queryId), begin_cell()));
-        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate));
+        ($self'owner, $self'games, $self'platformFeeRate, $self'version)~$YutEscrow$_fun_notify($DeployOk$_store_cell($DeployOk$_constructor_queryId($deploy'queryId), begin_cell()));
+        $YutEscrow$_contract_store(($self'owner, $self'games, $self'platformFeeRate, $self'version));
         return ();
     }
     

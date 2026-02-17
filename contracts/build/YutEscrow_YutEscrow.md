@@ -1,9 +1,9 @@
 # Tact compilation report
 Contract: YutEscrow
-BoC Size: 2338 bytes
+BoC Size: 2642 bytes
 
 ## Structures (Structs and Messages)
-Total structures: 21
+Total structures: 22
 
 ### DataSize
 TL-B: `_ cells:int257 bits:int257 refs:int257 = DataSize`
@@ -81,13 +81,17 @@ Signature: `SettlePayout{roomCode:uint64,winner1:address,winner2:address,winner3
 TL-B: `refund#a62c7809 roomCode:uint64 = Refund`
 Signature: `Refund{roomCode:uint64}`
 
+### WithdrawFees
+TL-B: `withdraw_fees#eb4ab20c amount:coins = WithdrawFees`
+Signature: `WithdrawFees{amount:coins}`
+
 ### GameData
 TL-B: `_ betAmount:coins playerCount:uint8 depositCount:uint8 gameActive:bool settled:bool createdAt:uint32 totalDeposited:coins player1:address player2:address player3:address player4:address deposit1:bool deposit2:bool deposit3:bool deposit4:bool = GameData`
 Signature: `GameData{betAmount:coins,playerCount:uint8,depositCount:uint8,gameActive:bool,settled:bool,createdAt:uint32,totalDeposited:coins,player1:address,player2:address,player3:address,player4:address,deposit1:bool,deposit2:bool,deposit3:bool,deposit4:bool}`
 
 ### YutEscrow$Data
-TL-B: `_ owner:address games:dict<int, ^GameData{betAmount:coins,playerCount:uint8,depositCount:uint8,gameActive:bool,settled:bool,createdAt:uint32,totalDeposited:coins,player1:address,player2:address,player3:address,player4:address,deposit1:bool,deposit2:bool,deposit3:bool,deposit4:bool}> platformFeeRate:uint16 = YutEscrow`
-Signature: `YutEscrow{owner:address,games:dict<int, ^GameData{betAmount:coins,playerCount:uint8,depositCount:uint8,gameActive:bool,settled:bool,createdAt:uint32,totalDeposited:coins,player1:address,player2:address,player3:address,player4:address,deposit1:bool,deposit2:bool,deposit3:bool,deposit4:bool}>,platformFeeRate:uint16}`
+TL-B: `_ owner:address games:dict<int, ^GameData{betAmount:coins,playerCount:uint8,depositCount:uint8,gameActive:bool,settled:bool,createdAt:uint32,totalDeposited:coins,player1:address,player2:address,player3:address,player4:address,deposit1:bool,deposit2:bool,deposit3:bool,deposit4:bool}> platformFeeRate:uint16 version:uint32 = YutEscrow`
+Signature: `YutEscrow{owner:address,games:dict<int, ^GameData{betAmount:coins,playerCount:uint8,depositCount:uint8,gameActive:bool,settled:bool,createdAt:uint32,totalDeposited:coins,player1:address,player2:address,player3:address,player4:address,deposit1:bool,deposit2:bool,deposit3:bool,deposit4:bool}>,platformFeeRate:uint16,version:uint32}`
 
 ## Get methods
 Total get methods: 3
@@ -141,6 +145,7 @@ No arguments
 * 3983: Invalid player count
 * 5721: Already settled
 * 19483: Game not active
+* 23041: No fees to withdraw
 * 29159: Game already settled
 * 41723: Game not found
 * 43107: Insufficient deposit amount
