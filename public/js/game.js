@@ -947,30 +947,10 @@ socket.on('game-state', (state) => {
     });
     lastLogTotal = logTotal;
 
-    // AI 훈수 자동 트리거 (주요 이벤트 감지)
-    const lastLog = newLogs[newLogs.length - 1] || '';
-    if (lastLog.includes('💥')) {
-      requestAutoAdvice('상대 말 잡기 발생!');
-    } else if (lastLog.includes('✅')) {
-      requestAutoAdvice('말이 완주했다!');
-    } else if (lastLog.includes('📦')) {
-      requestAutoAdvice('말을 업었다!');
-    } else if (lastLog.includes('윷') && lastLog.includes('🎲')) {
-      requestAutoAdvice('윷이 나왔다! 추가 턴!');
-    } else if (lastLog.includes('모') && lastLog.includes('🎲')) {
-      requestAutoAdvice('모가 나왔다! 추가 턴!');
-    } else if (lastLog.includes('빽도') && lastLog.includes('🎲')) {
-      requestAutoAdvice('빽도 나왔다 ㅋㅋ');
-    }
   }
 
-  // 내 이동 단계 시작 시 전략 조언
-  if (state.pendingMoves.length > 0 && !state.throwPhase) {
-    const curOrigIdx = playerOrder[state.currentPlayer];
-    if (curOrigIdx === myPlayerIdx) {
-      requestAutoAdvice('내 이동 차례 시작 - 전략 조언 해줘');
-    }
-  }
+  // Update stats panel
+  if (state.stats) updateStatsPanel(state.stats);
 
   // Detect token movement for step animation
   if (prevTokens) {
@@ -1489,151 +1469,72 @@ socket.on('chat-message', (data) => {
 });
 
 // ============================================
-// AI Chat
+// Game Stats Panel
 // ============================================
-function buildGameStateText() {
-  if (!gameState) return '게임이 아직 시작되지 않았습니다.';
-  const curTeam = getTeamForTurn(gameState.currentPlayer);
-  let text = `현재 차례: 팀 ${curTeam}\n`;
-  text += `사용 가능한 이동: ${gameState.pendingMoves.map(m => `${m.name}(${m.value})`).join(', ') || '없음'}\n`;
-  text += gameState.throwPhase ? '상태: 던지기 단계\n' : '상태: 말 이동 단계\n';
+function updateStatsPanel(stats) {
+  const body = document.getElementById('stats-body');
+  if (!body || !stats) return;
 
-  const allTeamsText = getTokenTeams(gameState.tokens);
-  allTeamsText.forEach(t => {
-    text += `\n${isFFAMode ? '플레이어' : '팀'} ${t}:\n`;
-    const finished = gameState.tokens[t].filter(tk => tk.pos === -2).length;
-    text += `  완주: ${finished}/${tokenCount}\n`;
-    gameState.tokens[t].forEach((tok, i) => {
-      let posStr;
-      if (tok.pos === -1) posStr = '대기(홈)';
-      else if (tok.pos === -2) posStr = '완주';
-      else if (tok.pos === -3) posStr = `업힘(말${tok.carriedBy + 1}에)`;
-      else {
-        posStr = `위치${tok.pos}`;
-        if (tok.route !== 'main') posStr += `(${tok.route})`;
-      }
-      if (tok.stacked > 1) posStr += ` [${tok.stacked}개 업힘]`;
-      text += `  말${i + 1}: ${posStr}\n`;
-    });
-  });
+  const keys = Object.keys(stats);
+  if (keys.length === 0) return;
 
-  if (gameState.log?.length) {
-    text += `\n최근 로그:\n`;
-    gameState.log.slice(-5).forEach(l => { text += `  ${l}\n`; });
-  }
-  return text;
-}
-
-const aiChatMessages = document.getElementById('ai-chat-messages');
-const aiChatInput = document.getElementById('ai-chat-input');
-const aiChatSend = document.getElementById('ai-chat-send');
-const aiPanel = document.getElementById('ai-chat-panel');
-const aiToggleBtn = document.getElementById('ai-toggle-btn');
-let aiSending = false;
-
-function addAiMessage(text, isUser) {
-  const div = document.createElement('div');
-  div.className = `ai-msg ${isUser ? 'ai-msg-user' : 'ai-msg-bot'}`;
-  div.textContent = text;
-  aiChatMessages.appendChild(div);
-  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
-  return div;
-}
-
-async function sendAiMessage(message) {
-  if (aiSending || !message.trim()) return;
-  aiSending = true;
-  aiChatSend.disabled = true;
-
-  addAiMessage(message, true);
-  const loadingDiv = addAiMessage('생각 중...', false);
-  loadingDiv.classList.add('ai-msg-loading');
-
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message,
-        gameState: buildGameStateText()
-      })
-    });
-    const data = await res.json();
-    loadingDiv.textContent = data.reply || 'AI 응답 오류';
-    loadingDiv.classList.remove('ai-msg-loading');
-  } catch (err) {
-    loadingDiv.textContent = '서버 연결 오류';
-    loadingDiv.classList.remove('ai-msg-loading');
-  }
-
-  aiSending = false;
-  aiChatSend.disabled = false;
-  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
-}
-
-aiChatSend.addEventListener('click', () => {
-  sendAiMessage(aiChatInput.value);
-  aiChatInput.value = '';
-});
-
-aiChatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.isComposing) {
-    sfx.chatTick();
-    sendAiMessage(aiChatInput.value);
-    aiChatInput.value = '';
-  }
-});
-
-document.querySelectorAll('.ai-quick-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    sendAiMessage(btn.dataset.q);
-  });
-});
-
-document.getElementById('btn-toggle-ai').addEventListener('click', () => {
-  aiPanel.style.display = 'none';
-  aiPanel.classList.remove('mobile-open');
-  aiToggleBtn.classList.remove('hidden');
-});
-
-aiToggleBtn.addEventListener('click', () => {
-  aiPanel.style.display = 'flex';
-  aiPanel.classList.add('mobile-open');
-  aiToggleBtn.classList.add('hidden');
-});
-
-// ============================================
-// Proactive AI 훈수 (Auto Commentary)
-// ============================================
-let _lastAdviceTime = 0;
-let _advicePending = false;
-const ADVICE_COOLDOWN = 8000; // 8초 쿨다운
-
-async function requestAutoAdvice(event) {
-  const now = Date.now();
-  if (_advicePending || now - _lastAdviceTime < ADVICE_COOLDOWN) return;
-  if (!gameState) return;
-
-  _advicePending = true;
-  _lastAdviceTime = now;
-
-  try {
-    const res = await fetch('/api/auto-advice', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        event,
-        gameState: buildGameStateText()
-      })
-    });
-    const data = await res.json();
-    if (data.reply && data.reply.trim()) {
-      addAiMessage(data.reply, false);
+  // Get player/team display names
+  const getLabel = (key) => {
+    if (isFFAMode) {
+      const turnIdx = parseInt(key.replace('P', ''));
+      const origIdx = playerOrder[turnIdx];
+      const p = playerNames[origIdx];
+      return p ? (p.isCOM ? 'COM' : p.name) : key;
     }
-  } catch (err) {
-    // 조용히 실패
-  }
-  _advicePending = false;
+    return key;
+  };
+
+  const throwNames = [
+    { key: 'do', label: '도' },
+    { key: 'gae', label: '개' },
+    { key: 'geol', label: '걸' },
+    { key: 'yut', label: '윷' },
+    { key: 'mo', label: '모' },
+    { key: 'backdo', label: '빽도' },
+  ];
+
+  let html = '<table class="stats-table"><thead><tr><th></th>';
+  keys.forEach(k => {
+    const label = getLabel(k);
+    html += `<th class="stats-team stats-team-${k}">${escapeHtml(label)}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  // Throw rows
+  throwNames.forEach(t => {
+    html += `<tr><td class="stats-row-label">${t.label}</td>`;
+    keys.forEach(k => {
+      const val = stats[k].throws[t.key] || 0;
+      html += `<td class="stats-val${val > 0 ? ' stats-has' : ''}">${val}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  // Separator
+  html += '<tr class="stats-sep"><td colspan="' + (keys.length + 1) + '"></td></tr>';
+
+  // Capture rows
+  html += '<tr><td class="stats-row-label">잡기</td>';
+  keys.forEach(k => {
+    const val = stats[k].captures || 0;
+    html += `<td class="stats-val stats-capture${val > 0 ? ' stats-has' : ''}">${val}</td>`;
+  });
+  html += '</tr>';
+
+  html += '<tr><td class="stats-row-label">잡힘</td>';
+  keys.forEach(k => {
+    const val = stats[k].captured || 0;
+    html += `<td class="stats-val stats-captured${val > 0 ? ' stats-has' : ''}">${val}</td>`;
+  });
+  html += '</tr>';
+
+  html += '</tbody></table>';
+  body.innerHTML = html;
 }
 
 // ============================================

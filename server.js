@@ -82,106 +82,6 @@ function isValidTonAddress(addr) {
   return false;
 }
 
-// === API Rate Limiting 미들웨어 ===
-function apiRateLimit(maxPerMinute) {
-  return (req, res, next) => {
-    const ip = req.ip || req.connection.remoteAddress;
-    if (!rateLimit(`api:${ip}`, maxPerMinute, 60000)) {
-      return res.status(429).json({ reply: '요청이 너무 많습니다. 잠시 후 다시 시도하세요.' });
-    }
-    next();
-  };
-}
-
-// === AI Chat Proxy (Groq API) ===
-app.post('/api/chat', apiRateLimit(10), async (req, res) => {
-  try {
-    const { message, gameState } = req.body;
-    if (typeof message !== 'string' || message.length > 500) return res.json({ reply: '메시지가 너무 깁니다.' });
-    if (typeof gameState !== 'string' || gameState.length > 5000) return res.json({ reply: '잘못된 요청입니다.' });
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) return res.json({ reply: 'AI 기능을 사용하려면 GROQ_API_KEY 환경변수를 설정하세요. (groq.com에서 무료 발급)' });
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          {
-            role: 'system',
-            content: `너는 윷놀이 같이 하는 친구야! 전략 조언도 해주고, 잡담이나 농담도 자유롭게 해. 친근하고 재밌게 대화해줘. 한국어로 자연스럽게 말해 (2-3문장).
-윷놀이에 대해 물어보면 답해줘: 4개의 말을 출발→완주시키는 보드게임. 도(1칸), 개(2칸), 걸(3칸), 윷(4칸,추가턴), 모(5칸,추가턴), 빽도(-1칸). 상대 말을 잡으면 추가턴. 꼭짓점(5,10,15)에서 대각선 숏컷 가능. 말 업기(같은 위치 아군)로 함께 이동 가능.
-윷놀이와 관련 없는 질문도 자유롭게 대답해줘. 유머와 이모지를 적극 활용해!
-
-현재 게임 상황:
-${gameState}`
-          },
-          { role: 'user', content: message }
-        ],
-        temperature: 0.7,
-        max_tokens: 200,
-      }),
-    });
-
-    const data = await response.json();
-    if (data.choices?.[0]?.message?.content) {
-      res.json({ reply: data.choices[0].message.content });
-    } else {
-      res.json({ reply: 'AI 응답을 받지 못했습니다.' });
-    }
-  } catch (err) {
-    console.error('AI chat error:', err);
-    res.json({ reply: 'AI 서비스에 일시적 오류가 발생했습니다.' });
-  }
-});
-
-// === AI Auto-Advice (Proactive 훈수) ===
-app.post('/api/auto-advice', apiRateLimit(15), async (req, res) => {
-  try {
-    const { gameState, event } = req.body;
-    if (typeof gameState !== 'string' || gameState.length > 5000) return res.json({ reply: '' });
-    if (typeof event !== 'string' || event.length > 200) return res.json({ reply: '' });
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) return res.json({ reply: '' });
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          {
-            role: 'system',
-            content: `너는 옆에서 윷놀이 보면서 훈수두는 친구야! 게임 상황을 보고 자동으로 한마디 해.
-규칙: 도(1), 개(2), 걸(3), 윷(4,추가턴), 모(5,추가턴), 빽도(-1). 꼭짓점(5,10)에서 대각선 숏컷. 상대 말 잡으면 추가턴.
-말투: 친구한테 말하듯 반말로, 짧고 재밌게 (1-2문장). 전략적 조언, 감탄, 놀림, 응원 등 상황에 맞게 자유롭게!
-이모지 적극 활용. 매번 다른 스타일로 말해.`
-          },
-          { role: 'user', content: `[상황: ${event}]\n\n${gameState}` }
-        ],
-        temperature: 0.9,
-        max_tokens: 100,
-      }),
-    });
-
-    const data = await response.json();
-    if (data.choices?.[0]?.message?.content) {
-      res.json({ reply: data.choices[0].message.content });
-    } else {
-      res.json({ reply: '' });
-    }
-  } catch (err) {
-    console.error('AI auto-advice error:', err);
-    res.json({ reply: '' });
-  }
-});
 
 // === TON Escrow ===
 const tonEscrow = new TonEscrow();
@@ -517,6 +417,17 @@ function createGameState(mode) {
     tokens = { A: makeTokens(), B: makeTokens() };
   }
 
+  // Initialize per-team/player stats
+  const stats = {};
+  const makeStats = () => ({ throws: { do: 0, gae: 0, geol: 0, yut: 0, mo: 0, backdo: 0 }, captures: 0, captured: 0 });
+  if (isFFA(mode)) {
+    const pc = getPlayerCount(mode);
+    for (let i = 0; i < pc; i++) stats[`P${i}`] = makeStats();
+  } else {
+    stats['A'] = makeStats();
+    stats['B'] = makeStats();
+  }
+
   return {
     started: false,
     currentPlayer: 0,
@@ -525,7 +436,8 @@ function createGameState(mode) {
     throwPhase: true,
     captureBonus: false,
     log: [],
-    winner: null
+    winner: null,
+    stats
   };
 }
 
@@ -543,6 +455,21 @@ function getTeamForPlayer(turnIdx, room) {
 
 function getFFAPlayerKey(turnIdx) {
   return `P${turnIdx}`;
+}
+
+// Record throw result into game stats
+function recordThrowStat(room, teamKey, resultName) {
+  if (!room.game?.stats?.[teamKey]) return;
+  const nameMap = { '도': 'do', '개': 'gae', '걸': 'geol', '윷': 'yut', '모': 'mo', '빽도': 'backdo' };
+  const key = nameMap[resultName];
+  if (key) room.game.stats[teamKey].throws[key]++;
+}
+
+// Record capture into game stats
+function recordCaptureStat(room, capturer, captured) {
+  if (!room.game?.stats) return;
+  if (room.game.stats[capturer]) room.game.stats[capturer].captures++;
+  if (room.game.stats[captured]) room.game.stats[captured].captured++;
 }
 
 function checkWin(tokens) {
@@ -573,7 +500,8 @@ function broadcastGameState(roomCode) {
     throwPhase: room.game.throwPhase,
     log: room.game.log.slice(-20),
     logTotal: room.game.log.length,
-    winner: room.game.winner
+    winner: room.game.winner,
+    stats: room.game.stats || null
   });
 }
 
@@ -713,10 +641,11 @@ function scheduleCOMTurn(roomCode) {
 
         const result = throwYut();
         console.log(`[GAME][INTEGRITY] Room ${roomCode} COM throw: ${result.name}, seedHash: ${result.seedHash}`);
-        
+
         const { seed, seedHash, ...clientResult } = result;
         room2.game.pendingMoves.push(clientResult);
-        
+        recordThrowStat(room2, team, result.name);
+
         if (!room2.game.integrityLog) room2.game.integrityLog = [];
         room2.game.integrityLog.push({
           timestamp: Date.now(),
@@ -836,6 +765,7 @@ function scheduleCOMTurn(roomCode) {
                 if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
                   const capturedCount = captureStack(oppTokens, i);
                   room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+                  recordCaptureStat(room2, team2, key);
                   if (move.value !== 4 && move.value !== 5) {
                     room2.game.captureBonus = true;
                   }
@@ -849,6 +779,7 @@ function scheduleCOMTurn(roomCode) {
               if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
                 const capturedCount = captureStack(oppTokens, i);
                 room2.game.log.push(`💥 COM이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+                recordCaptureStat(room2, team2, oppTeam);
                 if (move.value !== 4 && move.value !== 5) {
                   room2.game.captureBonus = true;
                 }
@@ -1350,13 +1281,18 @@ io.on('connection', (socket) => {
     if (!room.game.throwPhase) return;
 
     const result = throwYut();
-    
+
     // Security: Log seed hash for game integrity verification
     console.log(`[GAME][INTEGRITY] Room ${currentRoom} throw: ${result.name}, seedHash: ${result.seedHash}`);
-    
+
     // Store full result (with seed) in server-side log, strip seed for client
     const { seed, seedHash, ...clientResult } = result;
     room.game.pendingMoves.push(clientResult);
+
+    // Record throw stat
+    const ffaThrow = isFFA(room.mode);
+    const throwTeam = ffaThrow ? getFFAPlayerKey(room.game.currentPlayer) : getTeamForPlayer(room.game.currentPlayer, room);
+    recordThrowStat(room, throwTeam, result.name);
     
     // Store integrity record in game log
     if (!room.game.integrityLog) room.game.integrityLog = [];
@@ -1467,6 +1403,7 @@ io.on('connection', (socket) => {
             if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
               const capturedCount = captureStack(oppTokens, i);
               room.game.log.push(`💥 ${playerName}이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+              recordCaptureStat(room, team, key);
               if (move.value !== 4 && move.value !== 5) {
                 room.game.captureBonus = true;
               }
@@ -1480,6 +1417,7 @@ io.on('connection', (socket) => {
           if (oppTokens[i].pos >= 0 && samePosition(oppTokens[i].pos, token.pos)) {
             const capturedCount = captureStack(oppTokens, i);
             room.game.log.push(`💥 ${playerName}이(가) 상대 말을 잡았습니다! (${capturedCount}개)`);
+            recordCaptureStat(room, team, oppTeam);
             if (move.value !== 4 && move.value !== 5) {
               room.game.captureBonus = true;
             }

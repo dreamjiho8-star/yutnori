@@ -74,28 +74,15 @@
       </div>
     </div>
 
-    <div class="ai-chat-panel" id="ai-chat-panel">
-      <div class="ai-chat-header">
-        <span class="ai-chat-title">AI 조언자</span>
-        <button class="btn-icon" id="btn-toggle-ai" title="AI 패널 접기">✕</button>
+    <div class="stats-panel" id="stats-panel">
+      <div class="stats-header">
+        <span class="stats-title">게임 통계</span>
       </div>
-      <div class="ai-chat-messages" id="ai-chat-messages">
-        <div class="ai-msg ai-msg-bot">안녕하세요! 윷놀이 AI 조언자입니다. 게임 상황을 실시간으로 보고 있어요. 질문하세요!</div>
-      </div>
-      <div class="ai-chat-input-area">
-        <input type="text" id="ai-chat-input" placeholder="AI에게 질문하기..." autocomplete="off">
-        <button class="ai-chat-send" id="ai-chat-send">전송</button>
-      </div>
-      <div class="ai-quick-btns">
-        <button class="ai-quick-btn" data-q="지금 어떤 말을 움직이는 게 좋을까?">전략 추천</button>
-        <button class="ai-quick-btn" data-q="현재 게임 상황을 분석해줘">상황 분석</button>
-        <button class="ai-quick-btn" data-q="상대방 말을 잡을 수 있는 방법이 있을까?">잡기 찬스</button>
+      <div class="stats-body" id="stats-body">
+        <p class="stats-empty">게임이 시작되면 통계가 표시됩니다.</p>
       </div>
     </div>
   </div>
-
-  <!-- AI Toggle Button (when panel is hidden) -->
-  <button class="ai-toggle-btn hidden" id="ai-toggle-btn" title="AI 조언자 열기">AI</button>
 
   <!-- Win Modal -->
   <div class="modal hidden" id="win-modal">
