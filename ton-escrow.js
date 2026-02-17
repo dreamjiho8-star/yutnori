@@ -264,32 +264,64 @@ class TonEscrow {
 
   /**
    * Query contract for game state
+   * Uses raw TonCenter HTTP API to avoid @ton/ton TupleReader parsing issues
+   * with Tact optional struct returns
    */
   async getGameState(roomCode) {
     if (!this.contractAddress) return null;
 
     try {
       const roomCodeInt = this._activeGameIds.get(roomCode) || this._roomCodeToInt(roomCode);
+      const endpoint = this.isTestnet
+        ? 'https://testnet.toncenter.com/api/v2/runGetMethod'
+        : 'https://toncenter.com/api/v2/runGetMethod';
 
-      const result = await this._retry(() => this.client.runMethod(
-        this.contractAddress,
-        'gameData',
-        [{ type: 'int', value: roomCodeInt }]
-      ), 3, 3000);
+      const apiKey = process.env.TON_API_KEY || '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey) headers['X-API-Key'] = apiKey;
 
-      const stack = result.stack;
-      // Tact returns GameData? as optional tuple
-      const optTuple = stack.readTupleOpt();
-      if (!optTuple) return null;
+      const res = await this._retry(() => fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          address: this.contractAddress.toString({ testOnly: this.isTestnet, bounceable: true }),
+          method: 'gameData',
+          stack: [['num', roomCodeInt.toString()]],
+        }),
+      }), 3, 3000);
+
+      if (!res.ok) {
+        console.log(`[TON] getGameState HTTP ${res.status} for ${roomCode}`);
+        return null;
+      }
+
+      const data = await res.json();
+      if (!data.ok || data.result?.exit_code !== 0) {
+        console.log(`[TON] getGameState API error for ${roomCode}: exit_code=${data.result?.exit_code}`);
+        return null;
+      }
+
+      const stack = data.result.stack;
+      if (!stack || stack.length === 0) return null;
+
+      // Tact GameData? returns: empty list/tuple for null, non-empty tuple for data
+      const item = stack[0];
+      const elements = item[1]?.elements;
+      if (!elements || elements.length === 0) return null;
+
+      // Parse tuple elements: each is ["num", "0x..."] for ints or ["cell/slice", ...] for addresses
+      // We only need the first 7 fields (all ints/bools)
+      const readNum = (el) => BigInt(el[1]);
+      const readBool = (el) => BigInt(el[1]) !== 0n;
 
       return {
-        betAmount: optTuple.readBigNumber(),
-        playerCount: optTuple.readBigNumber(),
-        depositCount: optTuple.readBigNumber(),
-        gameActive: optTuple.readBoolean(),
-        settled: optTuple.readBoolean(),
-        createdAt: optTuple.readBigNumber(),
-        totalDeposited: optTuple.readBigNumber(),
+        betAmount: readNum(elements[0]),
+        playerCount: readNum(elements[1]),
+        depositCount: readNum(elements[2]),
+        gameActive: readBool(elements[3]),
+        settled: readBool(elements[4]),
+        createdAt: readNum(elements[5]),
+        totalDeposited: readNum(elements[6]),
       };
     } catch (err) {
       console.error(`[TON] getGameState failed for ${roomCode}:`, err.message);
