@@ -934,6 +934,11 @@ function startGameForRoom(roomCode) {
   if (isFFA(mode)) {
     const totalNeeded = getPlayerCount(mode);
     room.playerOrder = room.players.map((p, i) => p ? i : null).filter(i => i !== null);
+    // 셔플: FFA 순서 랜덤
+    for (let i = room.playerOrder.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [room.playerOrder[i], room.playerOrder[j]] = [room.playerOrder[j], room.playerOrder[i]];
+    }
     room.game = createGameState(mode);
     room.game.started = true;
     room.game.totalPlayers = totalNeeded;
@@ -949,6 +954,16 @@ function startGameForRoom(roomCode) {
       if (p.team === 'A') teamAPlayers.push({ ...p, origIdx: i });
       else teamBPlayers.push({ ...p, origIdx: i });
     });
+
+    // 셔플: 팀 내부 순서 랜덤 (A→B→A→B 교대는 유지)
+    for (let i = teamAPlayers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [teamAPlayers[i], teamAPlayers[j]] = [teamAPlayers[j], teamAPlayers[i]];
+    }
+    for (let i = teamBPlayers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [teamBPlayers[i], teamBPlayers[j]] = [teamBPlayers[j], teamBPlayers[i]];
+    }
 
     const ordered = [];
     for (let i = 0; i < ppt; i++) {
