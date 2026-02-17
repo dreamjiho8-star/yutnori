@@ -4,6 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const crypto = require('crypto');
+const { TonEscrow, BETTING_AMOUNTS } = require('./ton-escrow');
 
 const app = express();
 const server = http.createServer(app);
@@ -26,7 +27,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss: https://*.tonconnect.org https://*.toncenter.com https://bridge.tonapi.io; img-src 'self' data: https:; frame-src 'self' https:");
   next();
 });
 
@@ -169,7 +170,25 @@ app.post('/api/auto-advice', apiRateLimit(15), async (req, res) => {
   }
 });
 
+// === TON Escrow ===
+const tonEscrow = new TonEscrow();
+tonEscrow.init().catch(err => console.error('[TON] Init error:', err));
+
+// TON info endpoint
+app.get('/api/ton/info', (req, res) => {
+  res.json({
+    enabled: tonEscrow.isReady(),
+    address: tonEscrow.isReady() ? tonEscrow.getAddress() : null,
+    amounts: BETTING_AMOUNTS,
+    testnet: process.env.TON_TESTNET === 'true',
+  });
+});
+
 const rooms = {};
+
+// Track wallet addresses per room for betting
+// roomBetting: { roomCode: { betAmount, wallets: { playerIdx: address }, depositStatus: {} } }
+const roomBetting = {};
 
 // === Board Path Definitions ===
 // Outer ring: 0-19, Position 20 = virtual "back at 출발" (must pass to finish)
@@ -426,10 +445,13 @@ function checkWin(tokens) {
 function broadcastRoom(roomCode) {
   const room = rooms[roomCode];
   if (!room) return;
+  const rb = roomBetting[roomCode];
   io.to(roomCode).emit('room-update', {
     players: room.players.map(p => p ? { name: p.name, team: p.team, ready: p.ready, connected: p.connected, isCOM: !!p.isCOM } : null),
     hostIdx: room.hostIdx,
-    mode: room.mode || '2v2'
+    mode: room.mode || '2v2',
+    betting: room.betting || null,
+    wallets: rb ? Object.fromEntries(Object.entries(rb.wallets).map(([k, v]) => [k, v.slice(0, 8) + '...'])) : {},
   });
 }
 
@@ -664,6 +686,7 @@ function scheduleCOMTurn(roomCode) {
           if (checkWin(tokens)) {
             room2.game.winner = team2;
             room2.game.log.push(`🏆 팀 ${team2} 승리!`);
+            handleBettingPayout(roomCode, team2);
             io.to(roomCode).emit('game-over', { winner: team2 });
             broadcastGameState(roomCode);
             return;
@@ -728,6 +751,54 @@ function advanceTurn(room, roomCode) {
     const nextName = room.players[nextOrigIdx]?.name || 'COM';
     room.game.log.push(`🎯 ${nextName}님의 차례입니다.`);
   }
+}
+
+// === Betting Payout ===
+async function handleBettingPayout(roomCode, winnerTeam) {
+  const room = rooms[roomCode];
+  if (!room?.betting?.enabled || !tonEscrow.isReady()) return;
+
+  const rb = roomBetting[roomCode];
+  if (!rb) return;
+
+  const winnerPlayers = room.players
+    .map((p, i) => ({ ...p, idx: i }))
+    .filter(p => p && p.team === winnerTeam && !p.isCOM && rb.wallets[p.idx]);
+
+  if (winnerPlayers.length === 0) return;
+
+  const humanCount = room.players.filter(p => p && !p.isCOM).length;
+  const totalPot = rb.betAmount * humanCount;
+  const share = 1 / winnerPlayers.length;
+
+  const winners = winnerPlayers.map(p => ({
+    address: rb.wallets[p.idx],
+    share,
+  }));
+
+  try {
+    const results = await tonEscrow.payout(roomCode, winners, totalPot);
+    const payoutInfo = results.map(r => ({
+      address: r.address.slice(0, 8) + '...' + r.address.slice(-4),
+      amount: r.amount.toFixed(4),
+      txHash: r.txHash,
+    }));
+
+    io.to(roomCode).emit('betting-payout', {
+      totalPot: totalPot.toFixed(4),
+      payouts: payoutInfo,
+    });
+
+    room.game.log.push(`💰 베팅 정산 완료! 총 ${totalPot.toFixed(4)} TON`);
+    results.forEach(r => {
+      room.game.log.push(`💸 ${r.amount.toFixed(4)} TON → ${r.address.slice(0, 8)}...`);
+    });
+  } catch (err) {
+    console.error('[TON] Payout error:', err);
+    room.game.log.push('⚠️ 베팅 정산 중 오류 발생');
+  }
+
+  delete roomBetting[roomCode];
 }
 
 // === Socket Handlers ===
@@ -1046,6 +1117,7 @@ io.on('connection', (socket) => {
       if (checkWin(tokens)) {
         room.game.winner = team;
         room.game.log.push(`🏆 팀 ${team} 승리!`);
+        handleBettingPayout(currentRoom, team);
         io.to(currentRoom).emit('game-over', { winner: team });
         broadcastGameState(currentRoom);
         return;
@@ -1144,6 +1216,7 @@ io.on('connection', (socket) => {
     if (!room) return;
     if (playerIdx !== room.hostIdx) return socket.emit('room-error', '방장만 COM을 추가/제거할 수 있습니다.');
     if (room.game?.started) return;
+    if (room.betting?.enabled) return socket.emit('room-error', '베팅 모드에서는 COM을 추가할 수 없습니다.');
 
     const { team, slot } = data;
     if (team !== 'A' && team !== 'B') return;
@@ -1186,6 +1259,111 @@ io.on('connection', (socket) => {
     };
 
     broadcastRoom(currentRoom);
+  });
+
+  // === TON BETTING ===
+  socket.on('set-betting', (data) => {
+    if (!currentRoom || playerIdx === null) return;
+    const room = rooms[currentRoom];
+    if (!room || playerIdx !== room.hostIdx) return;
+    if (room.game?.started) return;
+    if (!tonEscrow.isReady()) return socket.emit('room-error', 'TON 베팅이 비활성화 상태입니다.');
+
+    const { enabled, amount } = data;
+    if (enabled) {
+      if (!tonEscrow.isValidBetAmount(amount)) return socket.emit('room-error', '유효하지 않은 베팅 금액입니다.');
+      // 베팅 모드 켜면 COM 전부 제거
+      room.players.forEach((p, i) => {
+        if (p && p.isCOM) room.players[i] = null;
+      });
+      room.betting = { enabled: true, amount };
+      roomBetting[currentRoom] = { betAmount: amount, wallets: {}, depositStatus: {} };
+    } else {
+      room.betting = null;
+      delete roomBetting[currentRoom];
+    }
+    io.to(currentRoom).emit('betting-update', {
+      enabled: !!room.betting,
+      amount: room.betting?.amount || 0,
+      escrowAddress: tonEscrow.getAddress(),
+    });
+    broadcastRoom(currentRoom);
+  });
+
+  socket.on('register-wallet', (data) => {
+    if (!currentRoom || playerIdx === null) return;
+    const room = rooms[currentRoom];
+    if (!room?.betting?.enabled) return;
+    if (typeof data.address !== 'string' || data.address.length < 10) return;
+
+    if (!roomBetting[currentRoom]) return;
+    roomBetting[currentRoom].wallets[playerIdx] = data.address;
+
+    io.to(currentRoom).emit('wallet-registered', {
+      playerIdx,
+      address: data.address.slice(0, 8) + '...' + data.address.slice(-4),
+    });
+  });
+
+  socket.on('confirm-deposit', () => {
+    // Player claims they sent deposit - server will verify via polling
+    if (!currentRoom || playerIdx === null) return;
+    const room = rooms[currentRoom];
+    if (!room?.betting?.enabled) return;
+    // Just notify others that player claims deposit sent
+    io.to(currentRoom).emit('deposit-claimed', { playerIdx });
+  });
+
+  socket.on('start-deposit-monitoring', () => {
+    if (!currentRoom || playerIdx === null) return;
+    const room = rooms[currentRoom];
+    if (!room || playerIdx !== room.hostIdx) return;
+    if (!room.betting?.enabled || !tonEscrow.isReady()) return;
+
+    const rb = roomBetting[currentRoom];
+    if (!rb) return;
+
+    // Check all human players have registered wallets
+    const humanPlayers = room.players
+      .map((p, i) => ({ ...p, idx: i }))
+      .filter(p => p && !p.isCOM);
+
+    const missingWallets = humanPlayers.filter(p => !rb.wallets[p.idx]);
+    if (missingWallets.length > 0) {
+      return socket.emit('room-error', '모든 플레이어가 지갑을 연결해야 합니다.');
+    }
+
+    const players = humanPlayers.map(p => ({
+      playerIdx: p.idx,
+      walletAddress: rb.wallets[p.idx],
+    }));
+
+    const roomCode = currentRoom;
+    tonEscrow.startDepositMonitoring(
+      roomCode,
+      rb.betAmount,
+      players,
+      // onAllDeposited
+      (status) => {
+        rb.depositStatus = status;
+        io.to(roomCode).emit('all-deposits-confirmed', { status });
+      },
+      // onTimeout
+      (refundedPlayerIdxs) => {
+        io.to(roomCode).emit('deposit-timeout', { refundedPlayers: refundedPlayerIdxs });
+        if (rooms[roomCode]) {
+          rooms[roomCode].betting = null;
+          delete roomBetting[roomCode];
+        }
+      }
+    );
+
+    io.to(currentRoom).emit('deposit-monitoring-started', {
+      escrowAddress: tonEscrow.getAddress(),
+      amount: rb.betAmount,
+      roomCode: currentRoom,
+      timeoutMs: 5 * 60 * 1000,
+    });
   });
 
   // === PLAYER CHAT ===

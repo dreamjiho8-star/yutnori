@@ -1,5 +1,71 @@
 const socket = io();
 
+// === TON Connect ===
+let tonConnectUI = null;
+let walletAddress = null;
+let tonEnabled = false;
+
+async function initTonConnect() {
+  try {
+    const res = await fetch('/api/ton/info');
+    const info = await res.json();
+    tonEnabled = info.enabled;
+    if (!tonEnabled) {
+      document.getElementById('wallet-card').classList.add('hidden');
+      return;
+    }
+
+    tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+      manifestUrl: window.location.origin + '/tonconnect-manifest.json',
+      buttonRootId: null,
+    });
+
+    tonConnectUI.onStatusChange((wallet) => {
+      if (wallet) {
+        walletAddress = wallet.account.address;
+        // Convert to user-friendly format
+        const short = walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4);
+        document.getElementById('wallet-address').textContent = short;
+        document.getElementById('wallet-info').classList.remove('hidden');
+        document.getElementById('btn-connect-wallet').classList.add('hidden');
+        document.getElementById('wallet-status').textContent = '연결됨 ✅';
+        document.getElementById('wallet-status').style.color = '#27AE60';
+        // Register wallet with server if in room
+        if (roomCode) {
+          socket.emit('register-wallet', { address: walletAddress });
+        }
+      } else {
+        walletAddress = null;
+        document.getElementById('wallet-info').classList.add('hidden');
+        document.getElementById('btn-connect-wallet').classList.remove('hidden');
+        document.getElementById('wallet-status').textContent = '미연결';
+        document.getElementById('wallet-status').style.color = '';
+      }
+    });
+  } catch (err) {
+    console.error('TON Connect init error:', err);
+    document.getElementById('wallet-card').classList.add('hidden');
+  }
+}
+
+document.getElementById('btn-connect-wallet').addEventListener('click', async () => {
+  if (tonConnectUI) {
+    try {
+      await tonConnectUI.openModal();
+    } catch (e) { console.error(e); }
+  }
+});
+
+document.getElementById('btn-disconnect-wallet').addEventListener('click', async () => {
+  if (tonConnectUI) {
+    try {
+      await tonConnectUI.disconnect();
+    } catch (e) { console.error(e); }
+  }
+});
+
+initTonConnect();
+
 const nameInput = document.getElementById('player-name');
 const btnCreate = document.getElementById('btn-create');
 const btnJoin = document.getElementById('btn-join');
@@ -233,6 +299,159 @@ lobbyChatInput.addEventListener('keydown', (e) => {
 socket.on('chat-message', (data) => {
   if (typeof sfx !== 'undefined') sfx.chatReceive();
   addLobbyChatMsg(data.name, data.team, data.message);
+});
+
+// === Betting UI ===
+let selectedBetAmount = 0.1;
+
+socket.on('room-update', (data) => {
+  // Show betting area for host
+  const bettingArea = document.getElementById('betting-area');
+  const bettingStatus = document.getElementById('betting-status');
+
+  if (data.hostIdx === myPlayerIdx && tonEnabled) {
+    bettingArea.classList.remove('hidden');
+  } else {
+    bettingArea.classList.add('hidden');
+  }
+
+  // Show betting status to all if betting is enabled
+  if (data.betting?.enabled) {
+    bettingStatus.classList.remove('hidden');
+    document.getElementById('bet-amount-display').textContent = data.betting.amount;
+
+    // Update wallet registration status
+    const statusList = document.getElementById('deposit-status-list');
+    statusList.innerHTML = '';
+    data.players.forEach((p, i) => {
+      if (!p || p.isCOM) return;
+      const div = document.createElement('div');
+      div.className = 'deposit-player-status';
+      const hasWallet = data.wallets && data.wallets[i];
+      div.innerHTML = `<span>${p.name}</span><span class="${hasWallet ? 'status-ok' : 'status-wait'}">${hasWallet ? '지갑 ✅' : '지갑 ❌'}</span>`;
+      statusList.appendChild(div);
+    });
+  } else {
+    bettingStatus.classList.add('hidden');
+  }
+});
+
+document.getElementById('betting-enabled').addEventListener('change', (e) => {
+  const enabled = e.target.checked;
+  const amountsEl = document.getElementById('betting-amounts');
+  if (enabled) {
+    amountsEl.classList.remove('hidden');
+    socket.emit('set-betting', { enabled: true, amount: selectedBetAmount });
+  } else {
+    amountsEl.classList.add('hidden');
+    socket.emit('set-betting', { enabled: false });
+  }
+});
+
+document.querySelectorAll('.btn-bet').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.btn-bet').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedBetAmount = parseFloat(btn.dataset.amount);
+    socket.emit('set-betting', { enabled: true, amount: selectedBetAmount });
+  });
+});
+
+// Set default active bet button
+document.querySelector('.btn-bet[data-amount="0.1"]')?.classList.add('active');
+
+socket.on('betting-update', (data) => {
+  const bettingStatus = document.getElementById('betting-status');
+  if (data.enabled) {
+    bettingStatus.classList.remove('hidden');
+    document.getElementById('bet-amount-display').textContent = data.amount;
+  } else {
+    bettingStatus.classList.add('hidden');
+  }
+});
+
+socket.on('deposit-monitoring-started', (data) => {
+  const escrowInfo = document.getElementById('escrow-info');
+  escrowInfo.classList.remove('hidden');
+  document.getElementById('escrow-amount').textContent = data.amount;
+  document.getElementById('escrow-address').textContent = data.escrowAddress;
+  document.getElementById('escrow-memo').textContent = data.roomCode;
+
+  // Start countdown timer
+  let remaining = Math.floor(data.timeoutMs / 1000);
+  const timerEl = document.getElementById('deposit-timer');
+  const timerInterval = setInterval(() => {
+    remaining--;
+    const min = Math.floor(remaining / 60);
+    const sec = remaining % 60;
+    timerEl.textContent = `⏱️ 남은 시간: ${min}:${sec.toString().padStart(2, '0')}`;
+    if (remaining <= 0) {
+      clearInterval(timerInterval);
+      timerEl.textContent = '⏱️ 시간 초과';
+    }
+  }, 1000);
+});
+
+document.getElementById('btn-send-deposit').addEventListener('click', async () => {
+  if (!tonConnectUI || !walletAddress) {
+    return showError('먼저 지갑을 연결하세요.');
+  }
+
+  const amountEl = document.getElementById('escrow-amount');
+  const addressEl = document.getElementById('escrow-address');
+  const memoEl = document.getElementById('escrow-memo');
+
+  const amount = parseFloat(amountEl.textContent);
+  const toAddress = addressEl.textContent;
+  const memo = memoEl.textContent;
+
+  try {
+    // Create transaction via TON Connect
+    const tx = {
+      validUntil: Math.floor(Date.now() / 1000) + 600,
+      messages: [{
+        address: toAddress,
+        amount: (amount * 1e9).toString(), // nanoTON
+        payload: btoa(memo), // base64 encoded memo
+      }],
+    };
+
+    await tonConnectUI.sendTransaction(tx);
+    socket.emit('confirm-deposit');
+    showError('입금 트랜잭션이 전송되었습니다. 확인 대기 중...');
+  } catch (err) {
+    console.error('Deposit error:', err);
+    showError('입금 실패: ' + (err.message || '트랜잭션이 거부되었습니다.'));
+  }
+});
+
+socket.on('deposit-claimed', (data) => {
+  // Update UI to show player claimed deposit
+  const statusList = document.getElementById('deposit-status-list');
+  const items = statusList.children;
+  // Simple visual update
+});
+
+socket.on('all-deposits-confirmed', (data) => {
+  document.getElementById('escrow-info').classList.add('hidden');
+  showError('✅ 모든 입금이 확인되었습니다! 게임을 시작할 수 있습니다.');
+});
+
+socket.on('deposit-timeout', (data) => {
+  document.getElementById('escrow-info').classList.add('hidden');
+  showError('⏱️ 입금 시간 초과. 입금된 금액은 환불됩니다.');
+});
+
+socket.on('betting-payout', (data) => {
+  // Will be handled on game page, but store for display
+  sessionStorage.setItem('yut-payout', JSON.stringify(data));
+});
+
+// Register wallet when joining room with betting
+socket.on('room-joined', function bettingWalletRegister(data) {
+  if (walletAddress && roomCode) {
+    setTimeout(() => socket.emit('register-wallet', { address: walletAddress }), 500);
+  }
 });
 
 // Auto-rejoin room after game ends

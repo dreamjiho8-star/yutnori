@@ -1025,6 +1025,24 @@ socket.on('return-to-lobby', () => {
   location.href = '/?rejoin=' + encodeURIComponent(roomCode);
 });
 
+// === Betting Payout Display ===
+socket.on('betting-payout', (data) => {
+  const modal = document.getElementById('win-modal');
+  const content = modal.querySelector('.modal-content');
+  // Remove existing payout info if any
+  const existing = content.querySelector('.payout-info');
+  if (existing) existing.remove();
+
+  const div = document.createElement('div');
+  div.className = 'payout-info';
+  div.innerHTML = `
+    <h4>💰 베팅 정산</h4>
+    <p>총 상금: ${data.totalPot} TON</p>
+    ${data.payouts.map(p => `<p>💸 ${p.amount} TON → ${p.address} ${p.txHash ? `<br><small>TX: ${p.txHash.slice(0, 12)}...</small>` : ''}</p>`).join('')}
+  `;
+  content.appendChild(div);
+});
+
 socket.on('move-error', (msg) => alert(msg));
 
 // Return to lobby button (host only)

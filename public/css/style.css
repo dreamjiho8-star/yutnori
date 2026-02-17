@@ -315,6 +315,230 @@ input[type="text"]:focus {
 
 
 /* ============================================
+   TON BETTING UI
+   ============================================ */
+
+.wallet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.wallet-label {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.wallet-status {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  font-weight: 600;
+}
+
+.btn-ton {
+  background: linear-gradient(135deg, #0098EA, #0077CC);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  font-size: 0.95rem;
+}
+
+.btn-ton:hover {
+  box-shadow: 0 4px 16px rgba(0, 152, 234, 0.4);
+  transform: translateY(-1px);
+}
+
+.wallet-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #F0F8FF;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid #B3D9F7;
+}
+
+.wallet-address {
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: #0077CC;
+  font-weight: 600;
+}
+
+.betting-area {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border);
+}
+
+.betting-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.betting-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+}
+
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: #ccc;
+  border-radius: 26px;
+  transition: 0.3s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: #0098EA;
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(22px);
+}
+
+.betting-amounts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-bet {
+  flex: 1;
+  min-width: 70px;
+  padding: 10px 8px;
+  border: 2px solid #0098EA;
+  border-radius: 10px;
+  background: white;
+  color: #0098EA;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+  width: auto;
+}
+
+.btn-bet:hover { background: #F0F8FF; }
+
+.btn-bet.active {
+  background: #0098EA;
+  color: white;
+  box-shadow: 0 2px 12px rgba(0, 152, 234, 0.3);
+}
+
+.betting-status {
+  margin-top: 8px;
+  padding: 16px;
+  background: #F0F8FF;
+  border: 1px solid #B3D9F7;
+  border-radius: 12px;
+}
+
+.betting-status-header {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #0077CC;
+}
+
+.deposit-player-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 0.85rem;
+  border-bottom: 1px solid rgba(0, 152, 234, 0.1);
+}
+
+.status-ok { color: #27AE60; font-weight: 600; }
+.status-wait { color: #E74C3C; font-weight: 600; }
+
+.escrow-info {
+  margin-top: 12px;
+  padding: 14px;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #B3D9F7;
+  font-size: 0.85rem;
+  line-height: 1.8;
+}
+
+.escrow-address {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: #0077CC;
+  word-break: break-all;
+  background: #F8F9FA;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin: 4px 0;
+}
+
+.escrow-memo {
+  color: var(--text-light);
+}
+
+.deposit-timer {
+  margin-top: 8px;
+  font-weight: 700;
+  color: #E74C3C;
+  font-size: 0.9rem;
+}
+
+/* Betting payout display in game */
+.payout-info {
+  background: linear-gradient(135deg, rgba(0, 152, 234, 0.1), rgba(0, 119, 204, 0.05));
+  border: 1px solid rgba(0, 152, 234, 0.2);
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: var(--text-cream);
+}
+
+.payout-info h4 {
+  color: #0098EA;
+  margin-bottom: 8px;
+}
+
+/* ============================================
    GAME PAGE
    ============================================ */
 

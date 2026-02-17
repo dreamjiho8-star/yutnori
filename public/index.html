@@ -5,12 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>윷놀이 - 온라인 2v2</title>
   <link rel="stylesheet" href="/css/style.css">
+  <script src="https://unpkg.com/@tonconnect/ui@2.0.6/dist/tonconnect-ui.min.js"></script>
 </head>
 <body>
   <div class="lobby-container">
     <div class="logo-area">
       <h1>🎲 윷놀이</h1>
       <p class="subtitle">온라인 대전</p>
+    </div>
+
+    <!-- TON Wallet Connection -->
+    <div class="card" id="wallet-card">
+      <div class="wallet-header">
+        <span class="wallet-label">💎 TON 지갑</span>
+        <span class="wallet-status" id="wallet-status">미연결</span>
+      </div>
+      <button class="btn btn-ton" id="btn-connect-wallet">🔗 지갑 연결</button>
+      <div class="wallet-info hidden" id="wallet-info">
+        <span class="wallet-address" id="wallet-address"></span>
+        <button class="btn-small" id="btn-disconnect-wallet" title="연결 해제">❌</button>
+      </div>
     </div>
 
     <!-- Name Input -->
@@ -62,6 +76,39 @@
         <button class="btn btn-team-a" id="btn-team-a">팀 A 선택</button>
         <button class="btn btn-team-b" id="btn-team-b">팀 B 선택</button>
       </div>
+      <!-- Betting Options (host only) -->
+      <div class="betting-area hidden" id="betting-area">
+        <h3 class="betting-title">💎 베팅 설정</h3>
+        <div class="betting-toggle">
+          <label class="toggle-switch">
+            <input type="checkbox" id="betting-enabled">
+            <span class="toggle-slider"></span>
+          </label>
+          <span>베팅 게임</span>
+        </div>
+        <div class="betting-amounts hidden" id="betting-amounts">
+          <button class="btn btn-bet" data-amount="0.05">0.05 TON</button>
+          <button class="btn btn-bet" data-amount="0.1">0.1 TON</button>
+          <button class="btn btn-bet" data-amount="0.2">0.2 TON</button>
+          <button class="btn btn-bet" data-amount="0.3">0.3 TON</button>
+        </div>
+      </div>
+
+      <!-- Betting Status -->
+      <div class="betting-status hidden" id="betting-status">
+        <div class="betting-status-header">
+          <span>💎 베팅: <strong id="bet-amount-display">0</strong> TON</span>
+        </div>
+        <div id="deposit-status-list"></div>
+        <div class="escrow-info hidden" id="escrow-info">
+          <p>에스크로 주소로 <strong id="escrow-amount">0</strong> TON을 전송하세요</p>
+          <p class="escrow-address" id="escrow-address"></p>
+          <p class="escrow-memo">메모(코멘트): <strong id="escrow-memo"></strong></p>
+          <button class="btn btn-ton" id="btn-send-deposit">💸 입금하기</button>
+          <div class="deposit-timer" id="deposit-timer"></div>
+        </div>
+      </div>
+
       <div class="room-actions" id="room-actions">
         <button class="btn btn-ready" id="btn-ready">준비</button>
         <button class="btn btn-primary hidden" id="btn-start">게임 시작</button>
