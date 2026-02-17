@@ -309,10 +309,11 @@ class TonEscrow {
       const elements = item[1]?.elements;
       if (!elements || elements.length === 0) return null;
 
-      // Parse tuple elements: each is ["num", "0x..."] for ints or ["cell/slice", ...] for addresses
-      // We only need the first 7 fields (all ints/bools)
-      const readNum = (el) => BigInt(el[1]);
-      const readBool = (el) => BigInt(el[1]) !== 0n;
+      // TonCenter tuple elements format:
+      // { "@type": "tvm.stackEntryNumber", "number": { "number": "300000000" } }
+      // { "@type": "tvm.stackEntrySlice", "slice": { "bytes": "..." } }
+      const readNum = (el) => BigInt(el.number.number);
+      const readBool = (el) => BigInt(el.number.number) !== 0n;
 
       return {
         betAmount: readNum(elements[0]),
