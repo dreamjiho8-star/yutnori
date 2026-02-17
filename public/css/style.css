@@ -1308,6 +1308,62 @@ input[type="text"]:focus {
 .stats-capture.stats-has { color: #6EB5FF; font-weight: 800; }
 .stats-captured.stats-has { color: #FF7B7B; font-weight: 800; }
 
+/* --- Win Modal Stats --- */
+.win-stats {
+  margin: 16px 0;
+  padding: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 12px;
+  border: 1px solid rgba(212, 168, 67, 0.15);
+}
+
+.win-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.win-stats-table th,
+.win-stats-table td {
+  padding: 5px 10px;
+  text-align: center;
+}
+
+.win-stats-table thead th {
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(212, 168, 67, 0.2);
+}
+
+.ws-team { color: rgba(220, 220, 255, 0.8); }
+.ws-team-A { color: #6EB5FF; }
+.ws-team-B { color: #FF7B7B; }
+.ws-team-P0 { color: #6EB5FF; }
+.ws-team-P1 { color: #FF7B7B; }
+.ws-team-P2 { color: #7BC67E; }
+.ws-team-P3 { color: #FFB86B; }
+
+.ws-label {
+  text-align: left !important;
+  color: rgba(220, 220, 255, 0.55);
+  font-weight: 600;
+}
+
+.ws-val {
+  color: rgba(220, 220, 255, 0.3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-val.ws-has { color: #fff; font-weight: 700; }
+.ws-val.ws-capture { color: #6EB5FF; font-weight: 700; }
+.ws-val.ws-captured { color: #FF7B7B; font-weight: 700; }
+
+.ws-sep td {
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(212, 168, 67, 0.1);
+}
+
 /* --- Reaction Toast --- */
 .reaction-toast {
   position: fixed;

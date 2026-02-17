@@ -1020,6 +1020,19 @@ socket.on('game-state', (state) => {
     } else {
       document.getElementById('win-text').textContent = `팀 ${state.winner} 승리!`;
     }
+    // Insert final stats into win modal
+    if (state.stats) {
+      const content = modal.querySelector('.modal-content');
+      const existing = content.querySelector('.win-stats');
+      if (!existing) {
+        const statsDiv = document.createElement('div');
+        statsDiv.className = 'win-stats';
+        statsDiv.innerHTML = buildWinStatsHTML(state.stats);
+        // Insert after win-text, before buttons
+        const winText = document.getElementById('win-text');
+        winText.after(statsDiv);
+      }
+    }
     modal.classList.remove('hidden');
   }
 });
@@ -1537,6 +1550,48 @@ function updateStatsPanel(stats) {
 
   html += '</tbody></table>';
   body.innerHTML = html;
+}
+
+function buildWinStatsHTML(stats) {
+  const keys = Object.keys(stats);
+  if (keys.length === 0) return '';
+
+  const getLabel = (key) => {
+    if (isFFAMode) {
+      const turnIdx = parseInt(key.replace('P', ''));
+      const origIdx = playerOrder[turnIdx];
+      const p = playerNames[origIdx];
+      return p ? (p.isCOM ? 'COM' : p.name) : key;
+    }
+    return key;
+  };
+
+  const throwNames = [
+    { key: 'do', label: '도' }, { key: 'gae', label: '개' },
+    { key: 'geol', label: '걸' }, { key: 'yut', label: '윷' },
+    { key: 'mo', label: '모' }, { key: 'backdo', label: '빽도' },
+  ];
+
+  let html = '<table class="win-stats-table"><thead><tr><th></th>';
+  keys.forEach(k => html += `<th class="ws-team ws-team-${k}">${escapeHtml(getLabel(k))}</th>`);
+  html += '</tr></thead><tbody>';
+
+  throwNames.forEach(t => {
+    html += `<tr><td class="ws-label">${t.label}</td>`;
+    keys.forEach(k => {
+      const val = stats[k].throws[t.key] || 0;
+      html += `<td class="ws-val${val > 0 ? ' ws-has' : ''}">${val}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += `<tr class="ws-sep"><td colspan="${keys.length + 1}"></td></tr>`;
+  html += '<tr><td class="ws-label">잡기</td>';
+  keys.forEach(k => html += `<td class="ws-val${stats[k].captures > 0 ? ' ws-capture' : ''}">${stats[k].captures || 0}</td>`);
+  html += '</tr><tr><td class="ws-label">잡힘</td>';
+  keys.forEach(k => html += `<td class="ws-val${stats[k].captured > 0 ? ' ws-captured' : ''}">${stats[k].captured || 0}</td>`);
+  html += '</tr></tbody></table>';
+  return html;
 }
 
 // ============================================
