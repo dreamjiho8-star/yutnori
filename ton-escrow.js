@@ -17,12 +17,12 @@ const PLATFORM_FEE_RATE = 0.05; // 5% fee
 const DEPOSIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const POLL_INTERVAL_MS = 10000; // 10초 (429 방지)
 
-// Tact message opcodes - these match the compiled contract
-// We'll compute them or use known values from the compiled ABI
-const OP_CREATE_GAME = 0x6ead1d33;   // will be set from ABI
-const OP_DEPOSIT = 0xb0d37ea6;        // will be set from ABI
-const OP_SETTLE_PAYOUT = 0x2122392f;  // will be set from ABI
-const OP_REFUND = 0xa62c7809;         // will be set from ABI
+// Tact message opcodes (from compiled ABI)
+const OP_CREATE_GAME = 0x6ead1d33;
+const OP_DEPOSIT = 0xb0d37ea6;
+const OP_SETTLE_PAYOUT = 0x2122392f;
+const OP_REFUND = 0xa62c7809;
+const OP_WITHDRAW_FEES = 0xeb4ab20c;
 
 class TonEscrow {
   constructor() {
@@ -216,47 +216,17 @@ class TonEscrow {
       }
       const betAmountNano = toNano(betAmount.toString());
 
-      // Build CreateGame message body
-      // Tact generates specific opcodes - we use the ABI
-      let body;
-      try {
-        const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
-        const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
-        await contract.send(
-          { // via sender
-            send: async (args) => {
-              await this._sendToContract(
-                Number(args.value) / 1e9,
-                args.body
-              );
-            }
-          },
-          { value: toNano('0.05') },
-          {
-            $$type: 'CreateGame',
-            roomCode: roomCodeInt,
-            betAmount: betAmountNano,
-            playerCount: BigInt(playerCount),
-          }
-        );
-        console.log(`[TON] CreateGame sent for room ${roomCode} (${roomCodeInt}), bet: ${betAmount} TON`);
-        this._activeGameIds.set(roomCode, roomCodeInt);
-        return true;
-      } catch (abiErr) {
-        // Fallback: manually build the message
-        console.log('[TON] ABI not available, building message manually');
-        body = beginCell()
-          .storeUint(0x6ead1d33, 32) // CreateGame opcode
-          .storeUint(roomCodeInt, 64) // roomCode
-          .storeCoins(betAmountNano) // betAmount
-          .storeUint(playerCount, 8) // playerCount
-          .endCell();
+      const body = beginCell()
+        .storeUint(0x6ead1d33, 32) // CreateGame opcode
+        .storeUint(roomCodeInt, 64) // roomCode
+        .storeCoins(betAmountNano) // betAmount
+        .storeUint(playerCount, 8) // playerCount
+        .endCell();
 
-        await this._sendToContract('0.05', body);
-        console.log(`[TON] CreateGame sent (manual) for room ${roomCode}`);
-        this._activeGameIds.set(roomCode, roomCodeInt);
-        return true;
-      }
+      await this._sendToContract('0.05', body);
+      console.log(`[TON] CreateGame sent for room ${roomCode} (${roomCodeInt}), bet: ${betAmount} TON`);
+      this._activeGameIds.set(roomCode, roomCodeInt);
+      return true;
     } catch (err) {
       console.error(`[TON] CreateGame failed for room ${roomCode}:`, err.message);
       return false;
@@ -464,40 +434,17 @@ class TonEscrow {
       const w3 = winnerAddresses[2] || null;
       const w4 = winnerAddresses[3] || null;
 
-      try {
-        const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
-        const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
-        await contract.send(
-          {
-            send: async (args) => {
-              await this._sendToContract(Number(args.value) / 1e9, args.body);
-            }
-          },
-          { value: toNano('0.1') },
-          {
-            $$type: 'SettlePayout',
-            roomCode: roomCodeInt,
-            winner1: w1,
-            winner2: w2,
-            winner3: w3,
-            winner4: w4,
-            winnerCount: BigInt(winnerCount),
-          }
-        );
-      } catch (e) {
-        // Manual fallback
-        const body = beginCell()
-          .storeUint(0x2122392f, 32) // SettlePayout opcode
-          .storeUint(roomCodeInt, 64) // roomCode
-          .storeAddress(w1) // winner1
-          .storeAddress(w2) // winner2 (optional)
-          .storeAddress(w3) // winner3 (optional)
-          .storeAddress(w4) // winner4 (optional)
-          .storeUint(winnerCount, 8) // winnerCount
-          .endCell();
+      const body = beginCell()
+        .storeUint(0x2122392f, 32) // SettlePayout opcode
+        .storeUint(roomCodeInt, 64) // roomCode
+        .storeAddress(w1) // winner1
+        .storeAddress(w2) // winner2 (optional)
+        .storeAddress(w3) // winner3 (optional)
+        .storeAddress(w4) // winner4 (optional)
+        .storeUint(winnerCount, 8) // winnerCount
+        .endCell();
 
-        await this._sendToContract('0.1', body);
-      }
+      await this._sendToContract('0.1', body);
 
       console.log(`[TON] SettlePayout sent for room ${roomCode}, ${winnerCount} winner(s)`);
       this._activeGameIds.delete(roomCode);
@@ -534,29 +481,12 @@ class TonEscrow {
     try {
       const roomCodeInt = this._activeGameIds.get(roomCode) || this._roomCodeToInt(roomCode);
 
-      try {
-        const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
-        const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
-        await contract.send(
-          {
-            send: async (args) => {
-              await this._sendToContract(Number(args.value) / 1e9, args.body);
-            }
-          },
-          { value: toNano('0.1') },
-          {
-            $$type: 'Refund',
-            roomCode: roomCodeInt,
-          }
-        );
-      } catch (e) {
-        const body = beginCell()
-          .storeUint(0xa62c7809, 32) // Refund opcode
-          .storeUint(roomCodeInt, 64) // roomCode
-          .endCell();
+      const body = beginCell()
+        .storeUint(0xa62c7809, 32) // Refund opcode
+        .storeUint(roomCodeInt, 64) // roomCode
+        .endCell();
 
-        await this._sendToContract('0.1', body);
-      }
+      await this._sendToContract('0.1', body);
 
       console.log(`[TON] Refund sent for room ${roomCode}`);
       this._activeGameIds.delete(roomCode);
@@ -577,30 +507,12 @@ class TonEscrow {
     try {
       const amountNano = amount > 0 ? toNano(amount.toString()) : 0n;
 
-      try {
-        const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
-        const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
-        await contract.send(
-          {
-            send: async (args) => {
-              await this._sendToContract(Number(args.value) / 1e9, args.body);
-            }
-          },
-          { value: toNano('0.05') },
-          {
-            $$type: 'WithdrawFees',
-            amount: amountNano,
-          }
-        );
-      } catch (e) {
-        // Manual fallback
-        const body = beginCell()
-          .storeUint(0xeb4ab20c, 32) // WithdrawFees opcode
-          .storeCoins(amountNano) // amount
-          .endCell();
+      const body = beginCell()
+        .storeUint(0xeb4ab20c, 32) // WithdrawFees opcode
+        .storeCoins(amountNano) // amount
+        .endCell();
 
-        await this._sendToContract('0.05', body);
-      }
+      await this._sendToContract('0.05', body);
 
       console.log(`[TON] WithdrawFees sent (amount: ${amount || 'all'} TON)`);
       return true;
