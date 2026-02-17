@@ -184,6 +184,16 @@ app.get('/api/ton/info', (req, res) => {
   });
 });
 
+// Deposit transaction builder endpoint (for smart contract deposits)
+app.get('/api/ton/deposit-tx', (req, res) => {
+  const { roomCode, amount } = req.query;
+  if (!roomCode || !amount) return res.json({ transaction: null });
+  if (!tonEscrow.isReady()) return res.json({ transaction: null });
+
+  const tx = tonEscrow.getDepositTransaction(roomCode, parseFloat(amount));
+  res.json({ transaction: tx });
+});
+
 const rooms = {};
 
 // Track wallet addresses per room for betting

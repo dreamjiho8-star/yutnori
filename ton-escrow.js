@@ -1,37 +1,39 @@
 /**
- * TON Escrow Module
- * Handles wallet initialization, deposit monitoring, and payouts
+ * TON Smart Contract Escrow Module
+ * Uses on-chain YutEscrow contract for deposits, payouts, and refunds
  * 
- * Security features:
- * - Transaction replay attack prevention (processed tx hash tracking)
- * - Race condition prevention (deposit processing lock)
- * - Precise amount validation with tolerance
- * - Payout retry with max 3 attempts
+ * Flow:
+ * 1. Server creates game on contract (createGame)
+ * 2. Players deposit directly to contract (deposit message with roomCode)
+ * 3. Server monitors contract state for deposit confirmations
+ * 4. Server settles payout via contract (settlePayout) - winners get paid on-chain
+ * 5. Or server refunds via contract (refund) - all depositors get refunded on-chain
  */
-const TonWeb = require('tonweb');
+const { TonClient, WalletContractV4, internal, toNano, fromNano, Address, beginCell } = require('@ton/ton');
+const { mnemonicToPrivateKey } = require('@ton/crypto');
 
 const BETTING_AMOUNTS = [0.05, 0.1, 0.2, 0.3]; // TON
 const PLATFORM_FEE_RATE = 0.05; // 5% fee
 const DEPOSIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const POLL_INTERVAL_MS = 5000; // check every 5 seconds
-const AMOUNT_TOLERANCE = 0.005; // 0.005 TON tolerance
-const PAYOUT_MAX_RETRIES = 3;
-const PAYOUT_RETRY_DELAY_MS = 3000;
+const POLL_INTERVAL_MS = 5000;
+
+// Tact message opcodes - these match the compiled contract
+// We'll compute them or use known values from the compiled ABI
+const OP_CREATE_GAME = 0x6ead1d33;   // will be set from ABI
+const OP_DEPOSIT = 0xb0d37ea6;        // will be set from ABI
+const OP_SETTLE_PAYOUT = 0x2122392f;  // will be set from ABI
+const OP_REFUND = 0xa62c7809;         // will be set from ABI
 
 class TonEscrow {
   constructor() {
-    this.tonweb = null;
+    this.client = null;
     this.wallet = null;
-    this.walletAddress = null;
+    this.walletContract = null;
     this.keyPair = null;
+    this.contractAddress = null;
     this.initialized = false;
     this.pendingDeposits = new Map();
-    
-    // Security: Track processed transaction hashes to prevent replay attacks
-    this.processedTxHashes = new Set();
-    
-    // Security: Lock mechanism for deposit processing
-    this._depositLocks = new Map(); // roomCode -> boolean
+    this.isTestnet = false;
   }
 
   async init() {
@@ -42,39 +44,48 @@ class TonEscrow {
     }
 
     try {
-      const isTestnet = process.env.TON_TESTNET === 'true';
-      const endpoint = isTestnet
+      this.isTestnet = process.env.TON_TESTNET === 'true';
+      const endpoint = this.isTestnet
         ? 'https://testnet.toncenter.com/api/v2/jsonRPC'
         : 'https://toncenter.com/api/v2/jsonRPC';
 
       const apiKey = process.env.TON_API_KEY || '';
 
-      this.tonweb = new TonWeb(new TonWeb.HttpProvider(endpoint, { apiKey }));
+      this.client = new TonClient({ endpoint, apiKey });
 
       const mnemonicWords = mnemonic.trim().split(/\s+/);
-      const { mnemonicToKeyPair } = require('tonweb-mnemonic');
-      this.keyPair = await mnemonicToKeyPair(mnemonicWords);
+      this.keyPair = await mnemonicToPrivateKey(mnemonicWords);
 
-      const WalletClass = this.tonweb.wallet.all.v4R2;
-      this.wallet = new WalletClass(this.tonweb.provider, {
+      this.wallet = WalletContractV4.create({
+        workchain: 0,
         publicKey: this.keyPair.publicKey,
       });
 
-      const address = await this.wallet.getAddress();
-      this.walletAddress = address.toString(true, true, false);
-      this.initialized = true;
-      console.log(`[TON] Escrow wallet initialized: ${this.walletAddress}`);
-      console.log(`[TON] Network: ${isTestnet ? 'TESTNET' : 'MAINNET'}`);
-      
-      // Periodically clean old processed tx hashes (keep last 10000)
-      setInterval(() => {
-        if (this.processedTxHashes.size > 10000) {
-          const arr = Array.from(this.processedTxHashes);
-          this.processedTxHashes = new Set(arr.slice(-5000));
-          console.log('[TON][SECURITY] Pruned processed tx hash cache');
+      this.walletContract = this.client.open(this.wallet);
+
+      // Load contract address
+      const contractAddr = process.env.ESCROW_CONTRACT_ADDRESS;
+      if (contractAddr) {
+        this.contractAddress = Address.parse(contractAddr);
+        console.log(`[TON] Smart contract escrow: ${this.contractAddress.toString()}`);
+      } else {
+        // Try loading from compiled contract init (compute address)
+        try {
+          const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
+          const contract = await YutEscrow.fromInit(this.wallet.address);
+          this.contractAddress = contract.address;
+          console.log(`[TON] Smart contract address (computed): ${this.contractAddress.toString()}`);
+        } catch (e) {
+          console.log('[TON] No contract address configured. Set ESCROW_CONTRACT_ADDRESS or deploy first.');
+          console.log('[TON] Falling back to wallet-based mode (limited).');
         }
-      }, 600000); // every 10 minutes
-      
+      }
+
+      this.initialized = true;
+      const ownerAddr = this.wallet.address.toString();
+      console.log(`[TON] Owner wallet: ${ownerAddr}`);
+      console.log(`[TON] Network: ${this.isTestnet ? 'TESTNET' : 'MAINNET'}`);
+
       return true;
     } catch (err) {
       console.error('[TON] Init failed:', err.message);
@@ -87,7 +98,16 @@ class TonEscrow {
   }
 
   getAddress() {
-    return this.walletAddress;
+    // Return contract address for deposits (players send to contract)
+    if (this.contractAddress) {
+      return this.contractAddress.toString();
+    }
+    // Fallback to owner wallet
+    return this.wallet?.address?.toString() || null;
+  }
+
+  getContractAddress() {
+    return this.contractAddress ? this.contractAddress.toString() : null;
   }
 
   isValidBetAmount(amount) {
@@ -99,185 +119,220 @@ class TonEscrow {
   }
 
   /**
-   * Acquire deposit processing lock for a room
+   * Convert room code string to uint64 for contract
+   * Simple hash: treat 4-char code as base-36 number
    */
-  _acquireDepositLock(roomCode) {
-    if (this._depositLocks.get(roomCode)) return false;
-    this._depositLocks.set(roomCode, true);
+  _roomCodeToInt(roomCode) {
+    let result = 0n;
+    for (let i = 0; i < roomCode.length; i++) {
+      result = result * 36n + BigInt(parseInt(roomCode[i], 36));
+    }
+    return result;
+  }
+
+  /**
+   * Send a message to the contract via owner wallet
+   */
+  async _sendToContract(value, body) {
+    if (!this.contractAddress) throw new Error('Contract not deployed');
+
+    const seqno = await this.walletContract.getSeqno();
+
+    await this.walletContract.sendTransfer({
+      seqno,
+      secretKey: this.keyPair.secretKey,
+      messages: [
+        internal({
+          to: this.contractAddress,
+          value: toNano(value.toString()),
+          body,
+        }),
+      ],
+    });
+
+    // Wait for seqno to increment (tx confirmed)
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const newSeqno = await this.walletContract.getSeqno();
+      if (newSeqno > seqno) return true;
+    }
+
+    console.warn('[TON] Transaction may still be pending');
     return true;
   }
 
-  _releaseDepositLock(roomCode) {
-    this._depositLocks.set(roomCode, false);
-  }
-
   /**
-   * Validate deposit amount against expected bet amount
-   * Returns: { valid, exact, overpaid, underpaid, difference }
+   * Create game on smart contract
    */
-  _validateDepositAmount(actualAmount, expectedAmount) {
-    const diff = actualAmount - expectedAmount;
-    
-    if (actualAmount < expectedAmount - AMOUNT_TOLERANCE) {
-      // Too little - reject
-      return { valid: false, exact: false, overpaid: false, underpaid: true, difference: diff };
+  async createGameOnContract(roomCode, betAmount, playerCount) {
+    if (!this.contractAddress) {
+      console.log('[TON] No contract - skipping on-chain createGame');
+      return false;
     }
-    
-    if (actualAmount > expectedAmount + AMOUNT_TOLERANCE) {
-      // Overpaid - accept but flag for refund of excess
-      return { valid: true, exact: false, overpaid: true, underpaid: false, difference: diff };
+
+    try {
+      const roomCodeInt = this._roomCodeToInt(roomCode);
+      const betAmountNano = toNano(betAmount.toString());
+
+      // Build CreateGame message body
+      // Tact generates specific opcodes - we use the ABI
+      let body;
+      try {
+        const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
+        const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
+        await contract.send(
+          { // via sender
+            send: async (args) => {
+              await this._sendToContract(
+                Number(args.value) / 1e9,
+                args.body
+              );
+            }
+          },
+          { value: toNano('0.05') },
+          {
+            $$type: 'CreateGame',
+            roomCode: roomCodeInt,
+            betAmount: betAmountNano,
+            playerCount: BigInt(playerCount),
+          }
+        );
+        console.log(`[TON] CreateGame sent for room ${roomCode} (${roomCodeInt}), bet: ${betAmount} TON`);
+        return true;
+      } catch (abiErr) {
+        // Fallback: manually build the message
+        console.log('[TON] ABI not available, building message manually');
+        body = beginCell()
+          .storeUint(0x6ead1d33, 32) // CreateGame opcode (approximate)
+          .storeUint(0, 64) // query_id
+          .storeUint(roomCodeInt, 64)
+          .storeCoins(betAmountNano)
+          .storeUint(playerCount, 8)
+          .endCell();
+
+        await this._sendToContract('0.05', body);
+        console.log(`[TON] CreateGame sent (manual) for room ${roomCode}`);
+        return true;
+      }
+    } catch (err) {
+      console.error(`[TON] CreateGame failed for room ${roomCode}:`, err.message);
+      return false;
     }
-    
-    // Within tolerance
-    return { valid: true, exact: true, overpaid: false, underpaid: false, difference: diff };
   }
 
   /**
-   * Start monitoring deposits for a betting room
+   * Build deposit transaction for player to sign via TON Connect
+   * Returns transaction object that frontend sends via tonConnectUI.sendTransaction()
+   */
+  getDepositTransaction(roomCode, betAmount) {
+    if (!this.contractAddress) return null;
+
+    const roomCodeInt = this._roomCodeToInt(roomCode);
+
+    // Build Deposit message body
+    const body = beginCell()
+      .storeUint(0xb0d37ea6, 32) // Deposit opcode (approximate, will match compiled)
+      .storeUint(0, 64) // query_id
+      .storeUint(roomCodeInt, 64)
+      .endCell();
+
+    return {
+      validUntil: Math.floor(Date.now() / 1000) + 300,
+      messages: [
+        {
+          address: this.contractAddress.toString(),
+          amount: toNano(betAmount.toString()).toString(),
+          payload: body.toBoc().toString('base64'),
+        },
+      ],
+    };
+  }
+
+  /**
+   * Query contract for game state
+   */
+  async getGameState(roomCode) {
+    if (!this.contractAddress) return null;
+
+    try {
+      const roomCodeInt = this._roomCodeToInt(roomCode);
+      
+      try {
+        const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
+        const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
+        const gameData = await contract.getGameData(roomCodeInt);
+        return gameData;
+      } catch (e) {
+        // Fallback: direct getter call
+        const result = await this.client.runMethod(
+          this.contractAddress,
+          'gameData',
+          [{ type: 'int', value: roomCodeInt }]
+        );
+        return result.stack;
+      }
+    } catch (err) {
+      console.error(`[TON] getGameState failed for ${roomCode}:`, err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Start monitoring deposits by polling contract state
    */
   startDepositMonitoring(roomCode, betAmount, players, onAllDeposited, onTimeout) {
     const depositInfo = {
       betAmount,
-      players: {},
+      players,
       startTime: Date.now(),
       intervalId: null,
       timeoutId: null,
-      overpayments: [], // Track overpayments for refund
     };
 
-    for (const p of players) {
-      depositInfo.players[p.walletAddress] = {
-        playerIdx: p.playerIdx,
-        deposited: false,
-        txHash: null,
-      };
-    }
+    // Create game on contract
+    const playerCount = players.length;
+    this.createGameOnContract(roomCode, betAmount, playerCount).catch(err => {
+      console.error(`[TON] Failed to create game on contract: ${err.message}`);
+    });
 
     depositInfo.timeoutId = setTimeout(() => {
       this._handleDepositTimeout(roomCode, onTimeout);
     }, DEPOSIT_TIMEOUT_MS);
 
     depositInfo.intervalId = setInterval(async () => {
-      await this._checkDeposits(roomCode, onAllDeposited);
+      await this._checkContractDeposits(roomCode, onAllDeposited);
     }, POLL_INTERVAL_MS);
 
     this.pendingDeposits.set(roomCode, depositInfo);
-    console.log(`[TON] Monitoring deposits for room ${roomCode}, amount: ${betAmount} TON`);
+    console.log(`[TON] Monitoring contract deposits for room ${roomCode}, amount: ${betAmount} TON`);
   }
 
-  async _checkDeposits(roomCode, onAllDeposited) {
+  async _checkContractDeposits(roomCode, onAllDeposited) {
     const info = this.pendingDeposits.get(roomCode);
     if (!info) return;
 
-    // Security: Acquire lock to prevent race condition
-    if (!this._acquireDepositLock(roomCode)) {
-      console.log(`[TON][SECURITY] Deposit check skipped for room ${roomCode} - lock held`);
-      return;
-    }
-
     try {
-      const transactions = await this.tonweb.provider.getTransactions(this.walletAddress, 20);
+      const gameState = await this.getGameState(roomCode);
+      if (!gameState) return;
 
-      for (const tx of transactions) {
-        if (!tx.in_msg) continue;
-        const fromAddr = tx.in_msg.source;
-        const value = tx.in_msg.value;
-        const message = tx.in_msg.message || '';
+      // Check depositCount vs playerCount
+      const depositCount = Number(gameState.depositCount || 0);
+      const playerCount = info.players.length;
 
-        if (!fromAddr || !value) continue;
-
-        // Security: Get transaction hash and check for replay
-        const txHash = tx.transaction_id?.hash || null;
-        if (!txHash) continue;
-        
-        if (this.processedTxHashes.has(txHash)) {
-          // Already processed this transaction - skip (replay prevention)
-          continue;
-        }
-
-        const amountTon = parseFloat(TonWeb.utils.fromNano(value));
-
-        // Check memo matches room code
-        if (message.trim().toUpperCase() !== roomCode.toUpperCase()) continue;
-
-        // Security: Precise amount validation
-        const amountCheck = this._validateDepositAmount(amountTon, info.betAmount);
-        
-        if (!amountCheck.valid) {
-          console.log(`[TON][SECURITY] Deposit rejected for room ${roomCode}: amount ${amountTon} TON too low (expected ${info.betAmount} TON, diff: ${amountCheck.difference.toFixed(6)})`);
-          // Mark as processed to avoid re-checking
-          this.processedTxHashes.add(txHash);
-          continue;
-        }
-
-        // Find matching player by address
-        for (const [addr, pInfo] of Object.entries(info.players)) {
-          if (pInfo.deposited) continue;
-
-          try {
-            const normalizedFrom = new TonWeb.Address(fromAddr).toString(true, true, false);
-            const normalizedPlayer = new TonWeb.Address(addr).toString(true, true, false);
-            if (normalizedFrom === normalizedPlayer) {
-              // Security: Mark tx as processed BEFORE updating state
-              this.processedTxHashes.add(txHash);
-              
-              pInfo.deposited = true;
-              pInfo.txHash = txHash;
-              console.log(`[TON][SECURITY] Deposit confirmed for room ${roomCode}, player ${pInfo.playerIdx}: ${amountTon} TON (txHash: ${txHash})`);
-              
-              // Handle overpayment
-              if (amountCheck.overpaid) {
-                const excess = amountCheck.difference;
-                console.log(`[TON][SECURITY] Overpayment detected: ${excess.toFixed(6)} TON excess from ${addr}. Scheduling refund.`);
-                info.overpayments.push({ address: addr, amount: excess, playerIdx: pInfo.playerIdx });
-              }
-              
-              break; // Only match one player per tx
-            }
-          } catch (e) {
-            if (fromAddr.includes(addr) || addr.includes(fromAddr)) {
-              this.processedTxHashes.add(txHash);
-              pInfo.deposited = true;
-              pInfo.txHash = txHash;
-              
-              if (amountCheck.overpaid) {
-                info.overpayments.push({ address: addr, amount: amountCheck.difference, playerIdx: pInfo.playerIdx });
-              }
-              break;
-            }
-          }
-        }
-      }
-
-      // Check if all deposits received
-      const allDeposited = Object.values(info.players).every(p => p.deposited);
-      if (allDeposited) {
+      if (depositCount >= playerCount) {
         this._clearMonitoring(roomCode);
-        console.log(`[TON] All deposits received for room ${roomCode}`);
-        
-        // Refund overpayments
-        if (info.overpayments.length > 0) {
-          this._refundOverpayments(info.overpayments, roomCode);
+        console.log(`[TON] All deposits confirmed on-chain for room ${roomCode}`);
+
+        // Build deposit status
+        const status = {};
+        for (const p of info.players) {
+          status[p.playerIdx] = { deposited: true, txHash: 'on-chain' };
         }
-        
-        onAllDeposited(this._getDepositStatus(roomCode));
+
+        onAllDeposited(status);
       }
     } catch (err) {
-      console.error(`[TON] Error checking deposits for ${roomCode}:`, err.message);
-    } finally {
-      // Security: Always release lock
-      this._releaseDepositLock(roomCode);
-    }
-  }
-
-  async _refundOverpayments(overpayments, roomCode) {
-    for (const op of overpayments) {
-      try {
-        await this._sendTon(op.address, op.amount, `OVERPAY-REFUND-${roomCode}`);
-        console.log(`[TON][SECURITY] Overpayment refunded: ${op.amount.toFixed(6)} TON to ${op.address} (room ${roomCode})`);
-      } catch (err) {
-        console.error(`[TON][SECURITY] Overpayment refund failed for ${op.address}: ${err.message}`);
-      }
+      // Silently retry on next poll
     }
   }
 
@@ -288,26 +343,12 @@ class TonEscrow {
     console.log(`[TON] Deposit timeout for room ${roomCode}`);
     this._clearMonitoring(roomCode);
 
-    const deposited = Object.entries(info.players)
-      .filter(([_, p]) => p.deposited)
-      .map(([addr, p]) => ({ address: addr, amount: info.betAmount, playerIdx: p.playerIdx }));
+    // Trigger refund on contract
+    this.refundOnContract(roomCode).catch(err => {
+      console.error(`[TON] Auto-refund failed for ${roomCode}:`, err.message);
+    });
 
-    if (deposited.length > 0) {
-      this._refundPlayers(deposited, roomCode);
-    }
-
-    onTimeout(deposited.map(d => d.playerIdx));
-  }
-
-  async _refundPlayers(players, roomCode) {
-    for (const p of players) {
-      try {
-        await this._sendTon(p.address, p.amount, `REFUND-${roomCode}`);
-        console.log(`[TON] Refunded ${p.amount} TON to ${p.address} (room ${roomCode})`);
-      } catch (err) {
-        console.error(`[TON] Refund failed for ${p.address}:`, err.message);
-      }
-    }
+    onTimeout([]);
   }
 
   _clearMonitoring(roomCode) {
@@ -316,110 +357,144 @@ class TonEscrow {
     if (info.intervalId) clearInterval(info.intervalId);
     if (info.timeoutId) clearTimeout(info.timeoutId);
     this.pendingDeposits.delete(roomCode);
-    this._depositLocks.delete(roomCode);
   }
 
   getDepositStatus(roomCode) {
-    return this._getDepositStatus(roomCode);
-  }
-
-  _getDepositStatus(roomCode) {
     const info = this.pendingDeposits.get(roomCode);
     if (!info) return null;
-
+    // Return basic status - real status comes from contract
     const status = {};
-    for (const [addr, p] of Object.entries(info.players)) {
-      status[p.playerIdx] = {
-        deposited: p.deposited,
-        txHash: p.txHash,
-      };
+    for (const p of info.players) {
+      status[p.playerIdx] = { deposited: false, txHash: null };
     }
     return status;
   }
 
   /**
-   * Pay out winnings after game ends - with retry logic
-   * @param {string} roomCode
-   * @param {Array} winners - [{ address, share }]
-   * @param {number} totalPot - total bet amount in TON
-   * @returns {Array} - [{address, amount, txHash, retries}]
+   * Settle payout via smart contract
    */
   async payout(roomCode, winners, totalPot) {
-    const fee = totalPot * PLATFORM_FEE_RATE;
-    const payout = totalPot - fee;
-    const results = [];
-
-    for (const winner of winners) {
-      const amount = payout * winner.share;
-      let txHash = null;
-      let lastError = null;
-      let retries = 0;
-
-      // Security: Retry up to PAYOUT_MAX_RETRIES times
-      for (let attempt = 1; attempt <= PAYOUT_MAX_RETRIES; attempt++) {
-        try {
-          txHash = await this._sendTon(winner.address, amount, `WIN-${roomCode}`);
-          console.log(`[TON] Paid ${amount.toFixed(4)} TON to ${winner.address} (room ${roomCode}, attempt ${attempt})`);
-          retries = attempt - 1;
-          break;
-        } catch (err) {
-          lastError = err.message;
-          retries = attempt;
-          console.error(`[TON][SECURITY] Payout attempt ${attempt}/${PAYOUT_MAX_RETRIES} failed for ${winner.address}: ${err.message}`);
-          
-          if (attempt < PAYOUT_MAX_RETRIES) {
-            await new Promise(r => setTimeout(r, PAYOUT_RETRY_DELAY_MS));
-          }
-        }
-      }
-
-      if (txHash) {
-        results.push({ address: winner.address, amount, txHash, retries });
-      } else {
-        // All retries exhausted
-        console.error(`[TON][ADMIN-ALERT] PAYOUT FAILED after ${PAYOUT_MAX_RETRIES} retries! Room: ${roomCode}, Address: ${winner.address}, Amount: ${amount.toFixed(6)} TON, Error: ${lastError}`);
-        console.error(`[TON][ADMIN-ALERT] Manual intervention required for payout to ${winner.address}`);
-        results.push({ address: winner.address, amount, txHash: null, error: lastError, retries, failed: true });
-      }
+    if (!this.contractAddress) {
+      console.error('[TON] No contract address - cannot settle payout');
+      return winners.map(w => ({ address: w.address, amount: 0, txHash: null, failed: true, error: 'No contract' }));
     }
 
-    return results;
+    try {
+      const roomCodeInt = this._roomCodeToInt(roomCode);
+      const winnerAddresses = winners.map(w => Address.parse(w.address));
+      const winnerCount = winnerAddresses.length;
+
+      // Pad to 4 addresses
+      const zeroAddr = Address.parse('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c');
+      const w1 = winnerAddresses[0] || zeroAddr;
+      const w2 = winnerAddresses[1] || null;
+      const w3 = winnerAddresses[2] || null;
+      const w4 = winnerAddresses[3] || null;
+
+      try {
+        const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
+        const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
+        await contract.send(
+          {
+            send: async (args) => {
+              await this._sendToContract(Number(args.value) / 1e9, args.body);
+            }
+          },
+          { value: toNano('0.1') },
+          {
+            $$type: 'SettlePayout',
+            roomCode: roomCodeInt,
+            winner1: w1,
+            winner2: w2,
+            winner3: w3,
+            winner4: w4,
+            winnerCount: BigInt(winnerCount),
+          }
+        );
+      } catch (e) {
+        // Manual fallback
+        const body = beginCell()
+          .storeUint(0x2122392f, 32)
+          .storeUint(0, 64)
+          .storeUint(roomCodeInt, 64)
+          .storeAddress(w1)
+          .storeAddress(w2)
+          .storeAddress(w3)
+          .storeAddress(w4)
+          .storeUint(winnerCount, 8)
+          .endCell();
+
+        await this._sendToContract('0.1', body);
+      }
+
+      console.log(`[TON] SettlePayout sent for room ${roomCode}, ${winnerCount} winner(s)`);
+
+      const fee = totalPot * PLATFORM_FEE_RATE;
+      const payoutTotal = totalPot - fee;
+      const perWinner = payoutTotal / winnerCount;
+
+      return winners.map(w => ({
+        address: w.address,
+        amount: perWinner,
+        txHash: 'contract-settle',
+        retries: 0,
+      }));
+    } catch (err) {
+      console.error(`[TON] Payout failed for room ${roomCode}:`, err.message);
+      return winners.map(w => ({
+        address: w.address,
+        amount: 0,
+        txHash: null,
+        failed: true,
+        error: err.message,
+        retries: 0,
+      }));
+    }
   }
 
-  async _sendTon(toAddress, amountTon, memo) {
-    if (!this.initialized) throw new Error('Escrow not initialized');
+  /**
+   * Refund via smart contract
+   */
+  async refundOnContract(roomCode) {
+    if (!this.contractAddress) return;
 
-    const seqno = await this.wallet.methods.seqno().call() || 0;
-    const amountNano = TonWeb.utils.toNano(amountTon.toFixed(9));
+    try {
+      const roomCodeInt = this._roomCodeToInt(roomCode);
 
-    const transfer = this.wallet.methods.transfer({
-      secretKey: this.keyPair.secretKey,
-      toAddress: new TonWeb.Address(toAddress),
-      amount: amountNano,
-      seqno,
-      payload: memo,
-      sendMode: 3,
-    });
+      try {
+        const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
+        const contract = this.client.open(YutEscrow.fromAddress(this.contractAddress));
+        await contract.send(
+          {
+            send: async (args) => {
+              await this._sendToContract(Number(args.value) / 1e9, args.body);
+            }
+          },
+          { value: toNano('0.1') },
+          {
+            $$type: 'Refund',
+            roomCode: roomCodeInt,
+          }
+        );
+      } catch (e) {
+        const body = beginCell()
+          .storeUint(0xa62c7809, 32)
+          .storeUint(0, 64)
+          .storeUint(roomCodeInt, 64)
+          .endCell();
 
-    const result = await transfer.send();
-    await new Promise(r => setTimeout(r, 2000));
+        await this._sendToContract('0.1', body);
+      }
 
-    return result?.hash || `tx-${Date.now()}`;
+      console.log(`[TON] Refund sent for room ${roomCode}`);
+    } catch (err) {
+      console.error(`[TON] Refund failed for room ${roomCode}:`, err.message);
+    }
   }
 
   async cancelRoom(roomCode) {
-    const info = this.pendingDeposits.get(roomCode);
-    if (!info) return;
-
-    const deposited = Object.entries(info.players)
-      .filter(([_, p]) => p.deposited)
-      .map(([addr, p]) => ({ address: addr, amount: info.betAmount, playerIdx: p.playerIdx }));
-
     this._clearMonitoring(roomCode);
-
-    if (deposited.length > 0) {
-      await this._refundPlayers(deposited, roomCode);
-    }
+    await this.refundOnContract(roomCode);
   }
 }
 

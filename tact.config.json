@@ -1,0 +1,9 @@
+{
+  "projects": [
+    {
+      "name": "YutEscrow",
+      "path": "./contracts/yut_escrow.tact",
+      "output": "./contracts/build"
+    }
+  ]
+}

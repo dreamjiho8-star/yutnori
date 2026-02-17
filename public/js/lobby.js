@@ -408,15 +408,30 @@ document.getElementById('btn-send-deposit').addEventListener('click', async () =
   const memo = memoEl.textContent;
 
   try {
-    // Create transaction via TON Connect
-    const tx = {
-      validUntil: Math.floor(Date.now() / 1000) + 600,
-      messages: [{
-        address: toAddress,
-        amount: (amount * 1e9).toString(), // nanoTON
-        payload: btoa(memo), // base64 encoded memo
-      }],
-    };
+    // Build Deposit message for smart contract
+    // The server provides a pre-built transaction via API, or we build it client-side
+    let tx;
+    try {
+      const res = await fetch(`/api/ton/deposit-tx?roomCode=${encodeURIComponent(memo)}&amount=${amount}`);
+      const data = await res.json();
+      if (data.transaction) {
+        tx = data.transaction;
+      }
+    } catch (e) {
+      console.log('Failed to get deposit tx from server, using fallback');
+    }
+
+    if (!tx) {
+      // Fallback: simple transfer with memo (for non-contract mode)
+      tx = {
+        validUntil: Math.floor(Date.now() / 1000) + 600,
+        messages: [{
+          address: toAddress,
+          amount: (amount * 1e9).toString(),
+          payload: btoa(memo),
+        }],
+      };
+    }
 
     await tonConnectUI.sendTransaction(tx);
     socket.emit('confirm-deposit');
