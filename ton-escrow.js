@@ -68,14 +68,14 @@ class TonEscrow {
       const contractAddr = process.env.ESCROW_CONTRACT_ADDRESS;
       if (contractAddr) {
         this.contractAddress = Address.parse(contractAddr);
-        console.log(`[TON] Smart contract escrow: ${this.contractAddress.toString()}`);
+        console.log(`[TON] Smart contract escrow: ${this.contractAddress.toString({ testOnly: this.isTestnet, bounceable: true })}`);
       } else {
         // Try loading from compiled contract init (compute address)
         try {
           const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
           const contract = await YutEscrow.fromInit(this.wallet.address, 2n);
           this.contractAddress = contract.address;
-          console.log(`[TON] Smart contract address (computed): ${this.contractAddress.toString()}`);
+          console.log(`[TON] Smart contract address (computed): ${this.contractAddress.toString({ testOnly: this.isTestnet, bounceable: true })}`);
         } catch (e) {
           console.log('[TON] No contract address configured. Set ESCROW_CONTRACT_ADDRESS or deploy first.');
           console.log('[TON] Falling back to wallet-based mode (limited).');
@@ -83,7 +83,7 @@ class TonEscrow {
       }
 
       this.initialized = true;
-      const ownerAddr = this.wallet.address.toString();
+      const ownerAddr = this.wallet.address.toString({ testOnly: this.isTestnet, bounceable: true });
       console.log(`[TON] Owner wallet: ${ownerAddr}`);
       console.log(`[TON] Network: ${this.isTestnet ? 'TESTNET' : 'MAINNET'}`);
 
@@ -101,14 +101,14 @@ class TonEscrow {
   getAddress() {
     // Return contract address for deposits (players send to contract)
     if (this.contractAddress) {
-      return this.contractAddress.toString();
+      return this.contractAddress.toString({ testOnly: this.isTestnet, bounceable: true });
     }
     // Fallback to owner wallet
-    return this.wallet?.address?.toString() || null;
+    return this.wallet?.address?.toString({ testOnly: this.isTestnet, bounceable: true }) || null;
   }
 
   getContractAddress() {
-    return this.contractAddress ? this.contractAddress.toString() : null;
+    return this.contractAddress ? this.contractAddress.toString({ testOnly: this.isTestnet, bounceable: true }) : null;
   }
 
   isValidBetAmount(amount) {
@@ -277,7 +277,7 @@ class TonEscrow {
       validUntil: Math.floor(Date.now() / 1000) + 300,
       messages: [
         {
-          address: this.contractAddress.toString(),
+          address: this.contractAddress.toString({ testOnly: this.isTestnet, bounceable: true }),
           amount: toNano(betAmount.toString()).toString(),
           payload: body.toBoc().toString('base64'),
         },
