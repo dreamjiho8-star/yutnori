@@ -15,7 +15,7 @@ const { mnemonicToPrivateKey } = require('@ton/crypto');
 const BETTING_AMOUNT = 0.3; // TON (고정 베팅금액)
 const PLATFORM_FEE_RATE = 0.05; // 5% fee
 const DEPOSIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 10000; // 10초 (429 방지)
 
 // Tact message opcodes - these match the compiled contract
 // We'll compute them or use known values from the compiled ABI
@@ -339,6 +339,7 @@ class TonEscrow {
       startTime: Date.now(),
       intervalId: null,
       timeoutId: null,
+      _onAllDeposited: onAllDeposited,
     };
 
     depositInfo.timeoutId = setTimeout(() => {
@@ -359,11 +360,15 @@ class TonEscrow {
 
     try {
       const gameState = await this.getGameState(roomCode);
-      if (!gameState) return;
+      if (!gameState) {
+        console.log(`[TON] Poll: no game state for room ${roomCode} (may be 429 or not found)`);
+        return;
+      }
 
       // Check depositCount vs playerCount
       const depositCount = Number(gameState.depositCount || 0);
       const playerCount = info.players.length;
+      console.log(`[TON] Poll: room ${roomCode} deposits=${depositCount}/${playerCount}`);
 
       if (depositCount >= playerCount) {
         this._clearMonitoring(roomCode);
@@ -378,8 +383,20 @@ class TonEscrow {
         onAllDeposited(status);
       }
     } catch (err) {
-      // Silently retry on next poll
+      console.log(`[TON] Poll error for room ${roomCode}: ${err.message}`);
     }
+  }
+
+  /**
+   * Trigger an immediate deposit check (called when player confirms deposit)
+   */
+  triggerDepositCheck(roomCode) {
+    const info = this.pendingDeposits.get(roomCode);
+    if (!info) return;
+    // Wait 5 seconds for on-chain confirmation, then check
+    setTimeout(() => {
+      this._checkContractDeposits(roomCode, info._onAllDeposited);
+    }, 5000);
   }
 
   _handleDepositTimeout(roomCode, onTimeout) {

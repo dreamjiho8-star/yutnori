@@ -1653,12 +1653,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('confirm-deposit', () => {
-    // Player claims they sent deposit - server will verify via polling
+    // Player claims they sent deposit - trigger immediate on-chain check
     if (!currentRoom || playerIdx === null) return;
     const room = rooms[currentRoom];
     if (!room?.betting?.enabled) return;
-    // Just notify others that player claims deposit sent
     io.to(currentRoom).emit('deposit-claimed', { playerIdx });
+    // Trigger immediate deposit check instead of waiting for next poll
+    if (tonEscrow.triggerDepositCheck) {
+      tonEscrow.triggerDepositCheck(currentRoom);
+    }
   });
 
   // Note: start-deposit-monitoring is now integrated into start-game handler
