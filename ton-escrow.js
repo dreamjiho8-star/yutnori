@@ -467,14 +467,19 @@ class TonEscrow {
       const w3 = winnerAddresses[2] || null;
       const w4 = winnerAddresses[3] || null;
 
+      // Tact splits SettlePayout across cells: winner4 + winnerCount go in a reference cell
+      const refCell = beginCell()
+        .storeAddress(w4) // winner4 (optional, in ref cell)
+        .storeUint(winnerCount, 8) // winnerCount (in ref cell)
+        .endCell();
+
       const body = beginCell()
         .storeUint(0x2122392f, 32) // SettlePayout opcode
         .storeUint(roomCodeInt, 64) // roomCode
         .storeAddress(w1) // winner1
         .storeAddress(w2) // winner2 (optional)
         .storeAddress(w3) // winner3 (optional)
-        .storeAddress(w4) // winner4 (optional)
-        .storeUint(winnerCount, 8) // winnerCount
+        .storeRef(refCell) // reference cell with winner4 + winnerCount
         .endCell();
 
       await this._sendToContract('0.1', body);
