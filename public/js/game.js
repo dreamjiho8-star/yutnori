@@ -1078,10 +1078,17 @@ socket.on('betting-payout', (data) => {
 
   const div = document.createElement('div');
   div.className = 'payout-info';
+  const payoutLines = data.payouts.map(p => {
+    if (p.failed) {
+      return `<p style="color:#C23616">⚠️ 정산 실패 → ${escapeHtml(p.address)}</p>`;
+    }
+    return `<p>💸 ${escapeHtml(String(p.amount))} TON → ${escapeHtml(p.address)} ${p.txHash ? `<br><small>TX: ${escapeHtml(p.txHash.slice(0, 12))}...</small>` : ''}</p>`;
+  }).join('');
   div.innerHTML = `
     <h4>💰 베팅 정산</h4>
     <p>총 상금: ${escapeHtml(String(data.totalPot))} TON</p>
-    ${data.payouts.map(p => `<p>💸 ${escapeHtml(String(p.amount))} TON → ${escapeHtml(p.address)} ${p.txHash ? `<br><small>TX: ${escapeHtml(p.txHash.slice(0, 12))}...</small>` : ''}</p>`).join('')}
+    ${payoutLines}
+    ${data.hasFailures ? '<p style="color:#C23616"><small>⚠️ 일부 정산이 실패했습니다. 관리자에게 문의하세요.</small></p>' : ''}
   `;
   content.appendChild(div);
 });

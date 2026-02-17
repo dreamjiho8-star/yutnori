@@ -410,14 +410,21 @@ socket.on('room-update', (data) => {
     // Update wallet registration status
     const statusList = document.getElementById('deposit-status-list');
     statusList.innerHTML = '';
+    let myWalletRegistered = false;
     data.players.forEach((p, i) => {
       if (!p || p.isCOM) return;
       const div = document.createElement('div');
       div.className = 'deposit-player-status';
       const hasWallet = data.wallets && data.wallets[i];
+      if (i === myPlayerIdx && hasWallet) myWalletRegistered = true;
       div.innerHTML = `<span>${p.name}</span><span class="${hasWallet ? 'status-ok' : 'status-wait'}">${hasWallet ? '지갑 ✅' : '지갑 ❌'}</span>`;
       statusList.appendChild(div);
     });
+
+    // Auto re-register wallet if connected but not showing as registered
+    if (walletAddress && roomCode && !myWalletRegistered) {
+      socket.emit('register-wallet', { address: walletAddress });
+    }
   } else {
     bettingStatus.classList.add('hidden');
   }
@@ -437,13 +444,23 @@ document.getElementById('betting-enabled').addEventListener('change', (e) => {
 
 socket.on('betting-update', (data) => {
   const bettingStatus = document.getElementById('betting-status');
+  const bettingCheckbox = document.getElementById('betting-enabled');
+  const amountsEl = document.getElementById('betting-amounts');
   if (data.enabled) {
     bettingStatus.classList.remove('hidden');
     document.getElementById('bet-amount-display').textContent = data.amount;
+    bettingCheckbox.checked = true;
+    amountsEl.classList.remove('hidden');
   } else {
     bettingStatus.classList.add('hidden');
+    bettingCheckbox.checked = false;
+    amountsEl.classList.add('hidden');
+    // Hide escrow info / deposit UI
+    document.getElementById('escrow-info').classList.add('hidden');
   }
 });
+
+let depositTimerInterval = null;
 
 socket.on('deposit-monitoring-started', (data) => {
   const escrowInfo = document.getElementById('escrow-info');
@@ -452,16 +469,23 @@ socket.on('deposit-monitoring-started', (data) => {
   document.getElementById('escrow-address').textContent = data.escrowAddress;
   document.getElementById('escrow-memo').textContent = data.roomCode;
 
+  // Disable start button during deposit phase
+  const startBtn = document.getElementById('btn-start');
+  startBtn.disabled = true;
+  startBtn.textContent = '💸 입금 대기 중...';
+
   // Start countdown timer
   let remaining = Math.floor(data.timeoutMs / 1000);
   const timerEl = document.getElementById('deposit-timer');
-  const timerInterval = setInterval(() => {
+  if (depositTimerInterval) clearInterval(depositTimerInterval);
+  depositTimerInterval = setInterval(() => {
     remaining--;
     const min = Math.floor(remaining / 60);
     const sec = remaining % 60;
     timerEl.textContent = `⏱️ 남은 시간: ${min}:${sec.toString().padStart(2, '0')}`;
     if (remaining <= 0) {
-      clearInterval(timerInterval);
+      clearInterval(depositTimerInterval);
+      depositTimerInterval = null;
       timerEl.textContent = '⏱️ 시간 초과';
     }
   }, 1000);
@@ -524,11 +548,17 @@ socket.on('deposit-claimed', (data) => {
 
 socket.on('all-deposits-confirmed', (data) => {
   document.getElementById('escrow-info').classList.add('hidden');
-  showError('✅ 모든 입금이 확인되었습니다! 게임을 시작할 수 있습니다.');
+  if (depositTimerInterval) { clearInterval(depositTimerInterval); depositTimerInterval = null; }
+  showError('✅ 모든 입금이 확인되었습니다! 게임을 시작합니다...');
+  // Game will auto-start from server
 });
 
 socket.on('deposit-timeout', (data) => {
   document.getElementById('escrow-info').classList.add('hidden');
+  if (depositTimerInterval) { clearInterval(depositTimerInterval); depositTimerInterval = null; }
+  const startBtn = document.getElementById('btn-start');
+  startBtn.disabled = false;
+  startBtn.textContent = '게임 시작';
   showError('⏱️ 입금 시간 초과. 입금된 금액은 환불됩니다.');
 });
 

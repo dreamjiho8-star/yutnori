@@ -97,7 +97,7 @@ async function deploy() {
         to: contract.address,
         value: toNano('0.05'),
         init: contract.init,
-        body: contract.init ? undefined : null,
+        bounce: false, // Don't bounce on deploy - keep initial balance in contract
       }),
     ],
   });

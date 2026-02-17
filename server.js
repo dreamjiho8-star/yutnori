@@ -984,6 +984,57 @@ async function handleBettingPayout(roomCode, winnerTeam) {
   delete roomBetting[roomCode];
 }
 
+// === Start Game Logic (extracted for reuse) ===
+
+function startGameForRoom(roomCode) {
+  const room = rooms[roomCode];
+  if (!room) return;
+  if (room.game?.started) return;
+
+  const mode = room.mode || '2v2';
+
+  if (isFFA(mode)) {
+    const totalNeeded = getPlayerCount(mode);
+    room.playerOrder = room.players.map((p, i) => p ? i : null).filter(i => i !== null);
+    room.game = createGameState(mode);
+    room.game.started = true;
+    room.game.totalPlayers = totalNeeded;
+    room.game.log.push(`🎮 ${totalNeeded}인전 개인전이 시작되었습니다!`);
+    room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
+  } else {
+    const ppt = getPlayersPerTeam(mode);
+    const teamAPlayers = [];
+    const teamBPlayers = [];
+    room.players.forEach((p, i) => {
+      if (!p) return;
+      if (p.team === 'A') teamAPlayers.push({ ...p, origIdx: i });
+      else teamBPlayers.push({ ...p, origIdx: i });
+    });
+
+    const ordered = [];
+    for (let i = 0; i < ppt; i++) {
+      ordered.push(teamAPlayers[i], teamBPlayers[i]);
+    }
+    room.playerOrder = ordered.map(p => p.origIdx);
+    room.game = createGameState(mode);
+    room.game.started = true;
+    room.game.totalPlayers = ppt * 2;
+    room.game.log.push(`🎮 ${ppt}대${ppt} 게임이 시작되었습니다!`);
+    room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
+  }
+
+  io.to(roomCode).emit('game-started', {
+    playerOrder: room.playerOrder,
+    mode: mode,
+    isFFA: isFFA(mode),
+    tokenCount: getTokenCount(mode),
+    players: room.players.map(p => p ? { name: p.name, team: p.team, isCOM: !!p.isCOM } : null)
+  });
+  broadcastGameState(roomCode);
+
+  setTimeout(() => scheduleCOMTurn(roomCode), 1500);
+}
+
 // === Socket Handlers ===
 
 io.on('connection', (socket) => {
@@ -1151,68 +1202,106 @@ io.on('connection', (socket) => {
     broadcastRoom(currentRoom);
   });
 
-  socket.on('start-game', () => {
+  socket.on('start-game', async () => { try {
     if (!currentRoom || playerIdx === null) return;
     const room = rooms[currentRoom];
     if (!room) return;
     if (playerIdx !== room.hostIdx) return socket.emit('room-error', '방장만 게임을 시작할 수 있습니다.');
+    if (room._pendingDeposits) return socket.emit('room-error', '입금 대기 중입니다.');
 
     const mode = room.mode || '2v2';
 
     const allReady = room.players.every(p => p && (p.ready || p.isCOM));
     if (!allReady) return socket.emit('room-error', '모든 플레이어가 준비되어야 합니다.');
 
+    // Validate team composition before anything else
     if (isFFA(mode)) {
       const totalNeeded = getPlayerCount(mode);
       const activePlayers = room.players.filter(p => p);
       if (activePlayers.length !== totalNeeded) {
         return socket.emit('room-error', `${totalNeeded}명이 필요합니다.`);
       }
-      room.playerOrder = room.players.map((p, i) => p ? i : null).filter(i => i !== null);
-      room.game = createGameState(mode);
-      room.game.started = true;
-      room.game.totalPlayers = totalNeeded;
-      room.game.log.push(`🎮 ${totalNeeded}인전 개인전이 시작되었습니다!`);
-      room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
     } else {
       const ppt = getPlayersPerTeam(mode);
-      const teamAPlayers = [];
-      const teamBPlayers = [];
-      room.players.forEach((p, i) => {
-        if (!p) return;
-        if (p.team === 'A') teamAPlayers.push({ ...p, origIdx: i });
-        else teamBPlayers.push({ ...p, origIdx: i });
-      });
-
-      if (teamAPlayers.length !== ppt || teamBPlayers.length !== ppt) {
+      const teamACount = room.players.filter(p => p && p.team === 'A').length;
+      const teamBCount = room.players.filter(p => p && p.team === 'B').length;
+      if (teamACount !== ppt || teamBCount !== ppt) {
         return socket.emit('room-error', `각 팀에 ${ppt}명씩 필요합니다.`);
       }
-
-      // Interleave: A1, B1, A2, B2, A3, B3, ...
-      const ordered = [];
-      for (let i = 0; i < ppt; i++) {
-        ordered.push(teamAPlayers[i], teamBPlayers[i]);
-      }
-      room.playerOrder = ordered.map(p => p.origIdx);
-      room.game = createGameState(mode);
-      room.game.started = true;
-      room.game.totalPlayers = ppt * 2;
-      room.game.log.push(`🎮 ${ppt}대${ppt} 게임이 시작되었습니다!`);
-      room.game.log.push(`🎯 ${room.players[room.playerOrder[0]].name}님의 차례입니다.`);
     }
 
-    io.to(currentRoom).emit('game-started', {
-      playerOrder: room.playerOrder,
-      mode: mode,
-      isFFA: isFFA(mode),
-      tokenCount: getTokenCount(mode),
-      players: room.players.map(p => p ? { name: p.name, team: p.team, isCOM: !!p.isCOM } : null)
-    });
-    broadcastGameState(currentRoom);
+    // === Betting mode: require deposits before starting ===
+    if (room.betting?.enabled && tonEscrow.isReady()) {
+      const rb = roomBetting[currentRoom];
+      if (!rb) return socket.emit('room-error', '베팅 설정 오류');
 
-    // If first player is COM, start their turn
-    setTimeout(() => scheduleCOMTurn(currentRoom), 1500);
-  });
+      const humanPlayers = room.players
+        .map((p, i) => ({ ...p, idx: i }))
+        .filter(p => p && !p.isCOM);
+
+      const missingWallets = humanPlayers.filter(p => !rb.wallets[p.idx]);
+      if (missingWallets.length > 0) {
+        return socket.emit('room-error', '모든 플레이어가 지갑을 연결해야 합니다.');
+      }
+
+      const players = humanPlayers.map(p => ({
+        playerIdx: p.idx,
+        walletAddress: rb.wallets[p.idx],
+      }));
+
+      const roomCode = currentRoom;
+
+      // 1) Create game on contract FIRST (must succeed before taking deposits)
+      socket.emit('room-error', '⏳ 컨트랙트에 게임 생성 중...');
+      const created = await tonEscrow.createGameOnContract(roomCode, rb.betAmount, humanPlayers.length);
+      if (!created) {
+        return socket.emit('room-error', '❌ 컨트랙트 게임 생성 실패. 다시 시도하세요.');
+      }
+
+      // 2) Start deposit monitoring (CreateGame already confirmed on-chain)
+      room._pendingDeposits = true;
+
+      tonEscrow.startDepositMonitoringOnly(
+        roomCode,
+        rb.betAmount,
+        players,
+        // onAllDeposited
+        (status) => {
+          rb.depositStatus = status;
+          const r = rooms[roomCode];
+          if (r) r._pendingDeposits = false;
+          io.to(roomCode).emit('all-deposits-confirmed', { status });
+          // Auto-start game after deposits confirmed
+          startGameForRoom(roomCode);
+        },
+        // onTimeout
+        (refundedPlayerIdxs) => {
+          io.to(roomCode).emit('deposit-timeout', { refundedPlayers: refundedPlayerIdxs });
+          if (rooms[roomCode]) {
+            rooms[roomCode].betting = null;
+            rooms[roomCode]._pendingDeposits = false;
+            delete roomBetting[roomCode];
+            broadcastRoom(roomCode);
+          }
+        }
+      );
+
+      io.to(currentRoom).emit('deposit-monitoring-started', {
+        escrowAddress: tonEscrow.getAddress(),
+        amount: rb.betAmount,
+        roomCode: currentRoom,
+        timeoutMs: 5 * 60 * 1000,
+      });
+
+      return; // Wait for deposits before starting
+    }
+
+    // === Non-betting: start immediately ===
+    startGameForRoom(currentRoom);
+  } catch (err) {
+    console.error('start-game error:', err);
+    socket.emit('room-error', '게임 시작 중 오류 발생: ' + err.message);
+  } });
 
   // === RETURN TO LOBBY (same members) ===
   socket.on('return-to-lobby', () => {
@@ -1225,10 +1314,25 @@ io.on('connection', (socket) => {
     // Reset game state but keep players
     room.game = null;
     room.playerOrder = null;
+    room._pendingDeposits = false;
     room.players.forEach(p => {
       if (p && !p.isCOM) p.ready = false;
     });
+
+    // Reset betting state (roomBetting already deleted by payout, but clean up)
+    const wasBetting = !!room.betting;
+    room.betting = null;
+    delete roomBetting[currentRoom];
+
     io.to(currentRoom).emit('return-to-lobby');
+    // Notify clients that betting is reset
+    if (wasBetting) {
+      io.to(currentRoom).emit('betting-update', {
+        enabled: false,
+        amount: 0,
+        escrowAddress: null,
+      });
+    }
     broadcastRoom(currentRoom);
   });
 
@@ -1586,57 +1690,7 @@ io.on('connection', (socket) => {
     io.to(currentRoom).emit('deposit-claimed', { playerIdx });
   });
 
-  socket.on('start-deposit-monitoring', () => {
-    if (!currentRoom || playerIdx === null) return;
-    const room = rooms[currentRoom];
-    if (!room || playerIdx !== room.hostIdx) return;
-    if (!room.betting?.enabled || !tonEscrow.isReady()) return;
-
-    const rb = roomBetting[currentRoom];
-    if (!rb) return;
-
-    // Check all human players have registered wallets
-    const humanPlayers = room.players
-      .map((p, i) => ({ ...p, idx: i }))
-      .filter(p => p && !p.isCOM);
-
-    const missingWallets = humanPlayers.filter(p => !rb.wallets[p.idx]);
-    if (missingWallets.length > 0) {
-      return socket.emit('room-error', '모든 플레이어가 지갑을 연결해야 합니다.');
-    }
-
-    const players = humanPlayers.map(p => ({
-      playerIdx: p.idx,
-      walletAddress: rb.wallets[p.idx],
-    }));
-
-    const roomCode = currentRoom;
-    tonEscrow.startDepositMonitoring(
-      roomCode,
-      rb.betAmount,
-      players,
-      // onAllDeposited
-      (status) => {
-        rb.depositStatus = status;
-        io.to(roomCode).emit('all-deposits-confirmed', { status });
-      },
-      // onTimeout
-      (refundedPlayerIdxs) => {
-        io.to(roomCode).emit('deposit-timeout', { refundedPlayers: refundedPlayerIdxs });
-        if (rooms[roomCode]) {
-          rooms[roomCode].betting = null;
-          delete roomBetting[roomCode];
-        }
-      }
-    );
-
-    io.to(currentRoom).emit('deposit-monitoring-started', {
-      escrowAddress: tonEscrow.getAddress(),
-      amount: rb.betAmount,
-      roomCode: currentRoom,
-      timeoutMs: 5 * 60 * 1000,
-    });
-  });
+  // Note: start-deposit-monitoring is now integrated into start-game handler
 
   // === PLAYER CHAT ===
   socket.on('chat-message', (data) => {

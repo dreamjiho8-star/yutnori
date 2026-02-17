@@ -281,6 +281,18 @@ class TonEscrow {
    * Start monitoring deposits by polling contract state
    */
   startDepositMonitoring(roomCode, betAmount, players, onAllDeposited, onTimeout) {
+    // Legacy: creates game on contract + starts monitoring
+    const playerCount = players.length;
+    this.createGameOnContract(roomCode, betAmount, playerCount).catch(err => {
+      console.error(`[TON] Failed to create game on contract: ${err.message}`);
+    });
+    this.startDepositMonitoringOnly(roomCode, betAmount, players, onAllDeposited, onTimeout);
+  }
+
+  /**
+   * Start monitoring deposits only (assumes CreateGame already sent)
+   */
+  startDepositMonitoringOnly(roomCode, betAmount, players, onAllDeposited, onTimeout) {
     const depositInfo = {
       betAmount,
       players,
@@ -288,12 +300,6 @@ class TonEscrow {
       intervalId: null,
       timeoutId: null,
     };
-
-    // Create game on contract
-    const playerCount = players.length;
-    this.createGameOnContract(roomCode, betAmount, playerCount).catch(err => {
-      console.error(`[TON] Failed to create game on contract: ${err.message}`);
-    });
 
     depositInfo.timeoutId = setTimeout(() => {
       this._handleDepositTimeout(roomCode, onTimeout);
@@ -522,7 +528,7 @@ class TonEscrow {
       } catch (e) {
         // Manual fallback
         const body = beginCell()
-          .storeUint(0, 32) // WithdrawFees opcode (needs recompile to get actual)
+          .storeUint(0xeb4ab20c, 32) // WithdrawFees opcode
           .storeUint(0, 64) // query_id
           .storeCoins(amountNano)
           .endCell();
