@@ -209,7 +209,11 @@ class TonEscrow {
     }
 
     try {
-      const roomCodeInt = this._nextGameId(roomCode);
+      // 이미 이 방에 대한 활성 gameId가 있으면 재사용 (중복 호출 방지)
+      let roomCodeInt = this._activeGameIds.get(roomCode);
+      if (!roomCodeInt) {
+        roomCodeInt = this._nextGameId(roomCode);
+      }
       const betAmountNano = toNano(betAmount.toString());
 
       // Build CreateGame message body
@@ -499,6 +503,7 @@ class TonEscrow {
       }
 
       console.log(`[TON] SettlePayout sent for room ${roomCode}, ${winnerCount} winner(s)`);
+      this._activeGameIds.delete(roomCode);
 
       const fee = totalPot * PLATFORM_FEE_RATE;
       const payoutTotal = totalPot - fee;
@@ -557,6 +562,7 @@ class TonEscrow {
       }
 
       console.log(`[TON] Refund sent for room ${roomCode}`);
+      this._activeGameIds.delete(roomCode);
     } catch (err) {
       console.error(`[TON] Refund failed for room ${roomCode}:`, err.message);
     }

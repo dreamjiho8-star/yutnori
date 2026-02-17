@@ -1192,8 +1192,14 @@ io.on('connection', (socket) => {
 
     // === Betting mode: require deposits before starting ===
     if (room.betting?.enabled && tonEscrow.isReady()) {
+      // 중복 CreateGame 방지
+      if (room._pendingDeposits || room._creatingGame) {
+        return socket.emit('room-error', '이미 게임 생성/입금 대기 중입니다.');
+      }
+      room._creatingGame = true;
+
       const rb = roomBetting[currentRoom];
-      if (!rb) return socket.emit('room-error', '베팅 설정 오류');
+      if (!rb) { room._creatingGame = false; return socket.emit('room-error', '베팅 설정 오류'); }
 
       const humanPlayers = room.players
         .map((p, i) => ({ ...p, idx: i }))
@@ -1215,8 +1221,10 @@ io.on('connection', (socket) => {
       socket.emit('room-error', '⏳ 컨트랙트에 게임 생성 중...');
       const created = await tonEscrow.createGameOnContract(roomCode, rb.betAmount, humanPlayers.length);
       if (!created) {
+        room._creatingGame = false;
         return socket.emit('room-error', '❌ 컨트랙트 게임 생성 실패. 다시 시도하세요.');
       }
+      room._creatingGame = false;
 
       // 2) Start deposit monitoring (CreateGame already confirmed on-chain)
       room._pendingDeposits = true;
