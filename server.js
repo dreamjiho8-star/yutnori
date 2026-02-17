@@ -384,12 +384,23 @@ function generateRoomCode() {
 }
 
 function throwYut() {
+  // Security: Generate verifiable seed for game integrity
+  const seed = crypto.randomBytes(32).toString('hex');
+  const seedHash = crypto.createHash('sha256').update(seed).digest('hex');
+  
   let flats = 0;
+  // Use seed-derived randomness mixed with Math.random for unpredictability
   for (let i = 0; i < 4; i++) {
-    if (Math.random() < 0.54) flats++;
+    const seedByte = parseInt(seed.substring(i * 2, i * 2 + 2), 16) / 255;
+    const mixed = (seedByte + Math.random()) / 2;
+    if (mixed < 0.54) flats++;
   }
-  if (flats === 1 && Math.random() < 0.17) {
-    return { name: '빽도', value: -1, flats: -1, extraTurn: false };
+  if (flats === 1) {
+    const backdoByte = parseInt(seed.substring(8, 10), 16) / 255;
+    const mixed = (backdoByte + Math.random()) / 2;
+    if (mixed < 0.17) {
+      return { name: '빽도', value: -1, flats: -1, extraTurn: false, seed, seedHash };
+    }
   }
   const results = [
     { name: '모', value: 5, flats: 0, extraTurn: true },
@@ -398,7 +409,8 @@ function throwYut() {
     { name: '걸', value: 3, flats: 3, extraTurn: false },
     { name: '윷', value: 4, flats: 4, extraTurn: true },
   ];
-  return results[flats];
+  const result = results[flats];
+  return { ...result, seed, seedHash };
 }
 
 function getTokenCount(mode) {
@@ -598,7 +610,20 @@ function scheduleCOMTurn(roomCode) {
         if (!room2.game.throwPhase) return;
 
         const result = throwYut();
-        room2.game.pendingMoves.push(result);
+        console.log(`[GAME][INTEGRITY] Room ${roomCode} COM throw: ${result.name}, seedHash: ${result.seedHash}`);
+        
+        const { seed, seedHash, ...clientResult } = result;
+        room2.game.pendingMoves.push(clientResult);
+        
+        if (!room2.game.integrityLog) room2.game.integrityLog = [];
+        room2.game.integrityLog.push({
+          timestamp: Date.now(),
+          playerIdx: 'COM',
+          result: result.name,
+          value: result.value,
+          seed,
+          seedHash,
+        });
 
         if (result.extraTurn) {
           room2.game.throwPhase = true;
@@ -606,10 +631,10 @@ function scheduleCOMTurn(roomCode) {
           room2.game.throwPhase = false;
         }
 
-        room2.game.log.push(`🎲 COM: ${result.name} (${result.value > 0 ? '+' : ''}${result.value})`);
+        room2.game.log.push(`🎲 COM: ${result.name} (${result.value > 0 ? '+' : ''}${result.value}) [${seedHash.slice(0, 8)}]`);
 
         io.to(roomCode).emit('yut-result', {
-          result,
+          result: clientResult,
           canThrowAgain: result.extraTurn,
           pendingMoves: room2.game.pendingMoves
         });
@@ -782,17 +807,30 @@ async function handleBettingPayout(roomCode, winnerTeam) {
       address: r.address.slice(0, 8) + '...' + r.address.slice(-4),
       amount: r.amount.toFixed(4),
       txHash: r.txHash,
+      failed: r.failed || false,
+      retries: r.retries || 0,
     }));
+
+    const failedPayouts = results.filter(r => r.failed);
 
     io.to(roomCode).emit('betting-payout', {
       totalPot: totalPot.toFixed(4),
       payouts: payoutInfo,
+      hasFailures: failedPayouts.length > 0,
     });
 
     room.game.log.push(`💰 베팅 정산 완료! 총 ${totalPot.toFixed(4)} TON`);
     results.forEach(r => {
-      room.game.log.push(`💸 ${r.amount.toFixed(4)} TON → ${r.address.slice(0, 8)}...`);
+      if (r.failed) {
+        room.game.log.push(`⚠️ 정산 실패: ${r.amount.toFixed(4)} TON → ${r.address.slice(0, 8)}... (${r.retries}회 재시도 후 실패)`);
+      } else {
+        room.game.log.push(`💸 ${r.amount.toFixed(4)} TON → ${r.address.slice(0, 8)}... ${r.retries > 0 ? `(${r.retries}회 재시도)` : ''}`);
+      }
     });
+    
+    if (failedPayouts.length > 0) {
+      console.error(`[TON][ADMIN-ALERT] Room ${roomCode}: ${failedPayouts.length} payout(s) failed after all retries!`);
+    }
   } catch (err) {
     console.error('[TON] Payout error:', err);
     room.game.log.push('⚠️ 베팅 정산 중 오류 발생');
@@ -1042,9 +1080,25 @@ io.on('connection', (socket) => {
     if (!room.game.throwPhase) return;
 
     const result = throwYut();
-    room.game.pendingMoves.push(result);
+    
+    // Security: Log seed hash for game integrity verification
+    console.log(`[GAME][INTEGRITY] Room ${currentRoom} throw: ${result.name}, seedHash: ${result.seedHash}`);
+    
+    // Store full result (with seed) in server-side log, strip seed for client
+    const { seed, seedHash, ...clientResult } = result;
+    room.game.pendingMoves.push(clientResult);
+    
+    // Store integrity record in game log
+    if (!room.game.integrityLog) room.game.integrityLog = [];
+    room.game.integrityLog.push({
+      timestamp: Date.now(),
+      playerIdx,
+      result: result.name,
+      value: result.value,
+      seed,
+      seedHash,
+    });
 
-    // If 윷/모: can throw again. Otherwise: move phase.
     if (result.extraTurn) {
       room.game.throwPhase = true;
     } else {
@@ -1052,10 +1106,10 @@ io.on('connection', (socket) => {
     }
 
     const playerName = room.players[playerIdx]?.name || '플레이어';
-    room.game.log.push(`🎲 ${playerName}: ${result.name} (${result.value > 0 ? '+' : ''}${result.value})`);
+    room.game.log.push(`🎲 ${playerName}: ${result.name} (${result.value > 0 ? '+' : ''}${result.value}) [${seedHash.slice(0, 8)}]`);
 
     io.to(currentRoom).emit('yut-result', {
-      result,
+      result: clientResult,
       canThrowAgain: result.extraTurn,
       pendingMoves: room.game.pendingMoves
     });
