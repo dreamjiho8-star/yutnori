@@ -1305,6 +1305,7 @@ input[type="text"]:focus {
   text-align: left !important;
 }
 
+.stats-total.stats-has { color: var(--gold); font-weight: 800; }
 .stats-capture.stats-has { color: #6EB5FF; font-weight: 800; }
 .stats-captured.stats-has { color: #FF7B7B; font-weight: 800; }
 

@@ -1521,6 +1521,16 @@ function updateStatsPanel(stats) {
 
   // Section: throws
   html += `<tr><td class="stats-section-label" colspan="${cols}">윷 결과</td></tr>`;
+
+  // Total throws row
+  html += '<tr><td class="stats-row-label" style="font-weight:800">총 던짐</td>';
+  keys.forEach(k => {
+    const t = stats[k].throws;
+    const total = (t.do||0) + (t.gae||0) + (t.geol||0) + (t.yut||0) + (t.mo||0) + (t.backdo||0);
+    html += `<td class="stats-val stats-total${total > 0 ? ' stats-has' : ''}">${total}</td>`;
+  });
+  html += '</tr>';
+
   throwNames.forEach(t => {
     html += `<tr><td class="stats-row-label">${t.label}</td>`;
     keys.forEach(k => {
@@ -1575,6 +1585,15 @@ function buildWinStatsHTML(stats) {
   let html = '<table class="win-stats-table"><thead><tr><th></th>';
   keys.forEach(k => html += `<th class="ws-team ws-team-${k}">${escapeHtml(getLabel(k))}</th>`);
   html += '</tr></thead><tbody>';
+
+  // Total throws
+  html += '<tr><td class="ws-label" style="font-weight:800">총 던짐</td>';
+  keys.forEach(k => {
+    const t = stats[k].throws;
+    const total = (t.do||0) + (t.gae||0) + (t.geol||0) + (t.yut||0) + (t.mo||0) + (t.backdo||0);
+    html += `<td class="ws-val ws-has">${total}</td>`;
+  });
+  html += '</tr>';
 
   throwNames.forEach(t => {
     html += `<tr><td class="ws-label">${t.label}</td>`;
