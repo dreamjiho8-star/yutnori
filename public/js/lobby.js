@@ -10,6 +10,7 @@ async function initTonConnect() {
     const res = await fetch('/api/ton/info');
     const info = await res.json();
     tonEnabled = info.enabled;
+    const isTestnet = info.testnet;
     if (!tonEnabled) {
       document.getElementById('wallet-card').classList.add('hidden');
       return;
@@ -22,13 +23,33 @@ async function initTonConnect() {
 
     tonConnectUI.onStatusChange((wallet) => {
       if (wallet) {
+        // Check network mismatch: testnet chain = "-3", mainnet chain = "-239"
+        const walletChain = wallet.account.chain;
+        const walletOnTestnet = walletChain === '-3' || walletChain === -3;
+        const walletOnMainnet = walletChain === '-239' || walletChain === -239;
+
+        if (isTestnet && walletOnMainnet) {
+          alert('지갑이 메인넷으로 연결되어 있습니다!\n\n테스트넷 모드로 전환해주세요:\nTonkeeper → 설정 → 개발자 모드 → 테스트넷 전환');
+          document.getElementById('wallet-status').textContent = '네트워크 불일치 ⚠️';
+          document.getElementById('wallet-status').style.color = '#E74C3C';
+          tonConnectUI.disconnect();
+          return;
+        }
+        if (!isTestnet && walletOnTestnet) {
+          alert('지갑이 테스트넷으로 연결되어 있습니다!\n\n메인넷 모드로 전환해주세요.');
+          document.getElementById('wallet-status').textContent = '네트워크 불일치 ⚠️';
+          document.getElementById('wallet-status').style.color = '#E74C3C';
+          tonConnectUI.disconnect();
+          return;
+        }
+
         walletAddress = wallet.account.address;
         // Convert to user-friendly format
         const short = walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4);
         document.getElementById('wallet-address').textContent = short;
         document.getElementById('wallet-info').classList.remove('hidden');
         document.getElementById('btn-connect-wallet').classList.add('hidden');
-        document.getElementById('wallet-status').textContent = '연결됨 ✅';
+        document.getElementById('wallet-status').textContent = (isTestnet ? '[테스트넷] ' : '') + '연결됨 ✅';
         document.getElementById('wallet-status').style.color = '#27AE60';
         // Register wallet with server (방 입장 전이든 후든 항상 시도)
         if (roomCode) {
