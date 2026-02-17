@@ -38,6 +38,9 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '10kb' })); // body 크기 제한
 
+// favicon 404 방지
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
 // === Rate Limiter (메모리 기반) ===
 const _rateLimits = {};
 function rateLimit(key, maxPerWindow, windowMs) {
@@ -104,6 +107,7 @@ app.get('/api/ton/deposit-tx', (req, res) => {
   if (!tonEscrow.isReady()) return res.json({ transaction: null });
 
   const tx = tonEscrow.getDepositTransaction(roomCode, parseFloat(amount));
+  if (tx) console.log(`[TON] deposit-tx: address=${tx.messages[0].address}, amount=${tx.messages[0].amount}`);
   res.json({ transaction: tx });
 });
 
