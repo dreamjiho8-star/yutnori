@@ -4,7 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const crypto = require('crypto');
-const { TonEscrow, BETTING_AMOUNTS } = require('./ton-escrow');
+const { TonEscrow, BETTING_AMOUNT } = require('./ton-escrow');
 
 const app = express();
 const server = http.createServer(app);
@@ -192,7 +192,7 @@ app.get('/api/ton/info', (req, res) => {
   res.json({
     enabled: tonEscrow.isReady(),
     address: tonEscrow.isReady() ? tonEscrow.getAddress() : null,
-    amounts: BETTING_AMOUNTS,
+    amount: BETTING_AMOUNT,
     testnet: process.env.TON_TESTNET === 'true',
   });
 });
@@ -1541,15 +1541,14 @@ io.on('connection', (socket) => {
     if (room.game?.started) return;
     if (!tonEscrow.isReady()) return socket.emit('room-error', 'TON 베팅이 비활성화 상태입니다.');
 
-    const { enabled, amount } = data;
+    const { enabled } = data;
     if (enabled) {
-      if (!tonEscrow.isValidBetAmount(amount)) return socket.emit('room-error', '유효하지 않은 베팅 금액입니다.');
       // 베팅 모드 켜면 COM 전부 제거
       room.players.forEach((p, i) => {
         if (p && p.isCOM) room.players[i] = null;
       });
-      room.betting = { enabled: true, amount };
-      roomBetting[currentRoom] = { betAmount: amount, wallets: {}, depositStatus: {} };
+      room.betting = { enabled: true, amount: BETTING_AMOUNT };
+      roomBetting[currentRoom] = { betAmount: BETTING_AMOUNT, wallets: {}, depositStatus: {} };
     } else {
       room.betting = null;
       delete roomBetting[currentRoom];

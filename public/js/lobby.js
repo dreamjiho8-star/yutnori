@@ -389,7 +389,7 @@ socket.on('chat-message', (data) => {
 });
 
 // === Betting UI ===
-let selectedBetAmount = 0.1;
+const FIXED_BET_AMOUNT = 0.3;
 
 socket.on('room-update', (data) => {
   // Show betting area for host
@@ -428,24 +428,12 @@ document.getElementById('betting-enabled').addEventListener('change', (e) => {
   const amountsEl = document.getElementById('betting-amounts');
   if (enabled) {
     amountsEl.classList.remove('hidden');
-    socket.emit('set-betting', { enabled: true, amount: selectedBetAmount });
+    socket.emit('set-betting', { enabled: true });
   } else {
     amountsEl.classList.add('hidden');
     socket.emit('set-betting', { enabled: false });
   }
 });
-
-document.querySelectorAll('.btn-bet').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.btn-bet').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    selectedBetAmount = parseFloat(btn.dataset.amount);
-    socket.emit('set-betting', { enabled: true, amount: selectedBetAmount });
-  });
-});
-
-// Set default active bet button
-document.querySelector('.btn-bet[data-amount="0.1"]')?.classList.add('active');
 
 socket.on('betting-update', (data) => {
   const bettingStatus = document.getElementById('betting-status');

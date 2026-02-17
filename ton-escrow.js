@@ -12,7 +12,7 @@
 const { TonClient, WalletContractV4, internal, toNano, fromNano, Address, beginCell } = require('@ton/ton');
 const { mnemonicToPrivateKey } = require('@ton/crypto');
 
-const BETTING_AMOUNTS = [0.05, 0.1, 0.2, 0.3]; // TON
+const BETTING_AMOUNT = 0.3; // TON (고정 베팅금액)
 const PLATFORM_FEE_RATE = 0.05; // 5% fee
 const DEPOSIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const POLL_INTERVAL_MS = 5000;
@@ -111,11 +111,11 @@ class TonEscrow {
   }
 
   isValidBetAmount(amount) {
-    return BETTING_AMOUNTS.includes(amount);
+    return amount === BETTING_AMOUNT;
   }
 
-  getBettingAmounts() {
-    return BETTING_AMOUNTS;
+  getBettingAmount() {
+    return BETTING_AMOUNT;
   }
 
   /**
@@ -558,4 +558,4 @@ class TonEscrow {
   }
 }
 
-module.exports = { TonEscrow, BETTING_AMOUNTS, PLATFORM_FEE_RATE };
+module.exports = { TonEscrow, BETTING_AMOUNT, PLATFORM_FEE_RATE };
