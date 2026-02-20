@@ -911,25 +911,18 @@ async function handleBettingPayout(roomCode, winnerTeam) {
       console.error(`[TON][ADMIN-ALERT] Room ${roomCode}: ${failedPayouts.length} payout(s) failed after all retries!`);
     }
 
-    // 자동 수수료 출금: 정산 성공 시에만 수수료를 오너 지갑으로 전송
-    // (실패 시 출금하면 미정산 입금분까지 빠져나감)
-    if (failedPayouts.length === 0) {
-      try {
-        const withdrawn = await tonEscrow.withdrawFees();
-        if (withdrawn) {
-          console.log(`[TON] Auto fee withdrawal success for room ${roomCode}`);
-        }
-      } catch (feeErr) {
-        console.error(`[TON] Auto fee withdrawal failed:`, feeErr.message);
-      }
-    }
+    // 수수료는 컨트랙트에 축적 → 관리자가 /api/ton/withdraw-fees로 수동 출금
+    // (자동 출금 제거: 리매치 시 withdrawFees가 큐를 점유해 CreateGame이 50초+ 지연됨)
   } catch (err) {
     console.error('[TON] Payout error:', err);
     const roomErr = rooms[roomCode];
     if (roomErr?.game) roomErr.game.log.push('⚠️ 베팅 정산 중 오류 발생');
   }
 
-  delete roomBetting[roomCode];
+  // 리매치로 새 게임이 만들어졌을 수 있으므로, 같은 객체인 경우에만 삭제
+  if (roomBetting[roomCode] === rb) {
+    delete roomBetting[roomCode];
+  }
 }
 
 // === Start Game Logic (extracted for reuse) ===

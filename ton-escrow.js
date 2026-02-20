@@ -300,7 +300,11 @@ class TonEscrow {
     if (!this.contractAddress) return null;
 
     // CreateGame에서 저장한 실제 gameId 사용 (서버 재시작 시 불일치 방지)
-    const roomCodeInt = this._activeGameIds.get(roomCode) || this._roomCodeToInt(roomCode);
+    const activeId = this._activeGameIds.get(roomCode);
+    if (!activeId) {
+      console.warn(`[TON] getDepositTransaction: no active gameId for ${roomCode}, using computed (stale cache risk!)`);
+    }
+    const roomCodeInt = activeId || this._roomCodeToInt(roomCode);
     console.log(`[TON] getDepositTransaction: roomCode=${roomCode}, gameId=${roomCodeInt}`);
 
     // Build Deposit message body (Tact: opcode + roomCode, no query_id)
