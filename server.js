@@ -204,7 +204,7 @@ app.get('/api/admin/contract', adminAuth, async (req, res) => {
   try {
     const balance = await tonEscrow.getContractBalance();
     const address = tonEscrow.getContractAddress();
-    const ownerAddress = tonEscrow.getAddress();
+    const ownerAddress = tonEscrow.wallet?.address?.toString({ testOnly: tonEscrow.isTestnet, bounceable: true }) || '-';
     const activeGames = Array.from(tonEscrow._activeGameIds.entries()).map(([room, id]) => ({ room, gameId: id.toString() }));
     const pendingDeposits = Array.from(tonEscrow.pendingDeposits.keys());
     res.json({
