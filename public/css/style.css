@@ -522,6 +522,29 @@ input[type="text"]:focus {
   font-size: 0.9rem;
 }
 
+/* Deposit waiting spinner */
+.deposit-waiting-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px;
+  color: #0077CC;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.deposit-waiting-spinner .mini-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(0, 119, 204, 0.2);
+  border-top-color: #0077CC;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
 /* Betting payout display in game */
 .payout-info {
   background: linear-gradient(135deg, rgba(0, 152, 234, 0.1), rgba(0, 119, 204, 0.05));

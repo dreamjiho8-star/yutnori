@@ -360,6 +360,9 @@ socket.on('room-update', (data) => {
 });
 
 socket.on('game-started', (data) => {
+  // Dismiss betting overlay before navigation
+  const bo = document.getElementById('betting-overlay');
+  if (bo) bo.classList.add('hidden');
   sessionStorage.setItem('yut-room', roomCode);
   sessionStorage.setItem('yut-player', myPlayerIdx);
   sessionStorage.setItem('yut-order', JSON.stringify(data.playerOrder));
@@ -484,16 +487,35 @@ socket.on('betting-update', (data) => {
 let depositTimerInterval = null;
 
 socket.on('deposit-monitoring-started', (data) => {
+  // Dismiss full-screen overlay — deposit UI takes over
+  const bo = document.getElementById('betting-overlay');
+  if (bo) bo.classList.add('hidden');
+
   const escrowInfo = document.getElementById('escrow-info');
   escrowInfo.classList.remove('hidden');
   document.getElementById('escrow-amount').textContent = data.amount;
   document.getElementById('escrow-address').textContent = data.escrowAddress;
   document.getElementById('escrow-memo').textContent = data.roomCode;
 
+  // Reset deposit button state (for rematch)
+  const depositBtn = document.getElementById('btn-send-deposit');
+  depositBtn.disabled = false;
+  depositBtn.textContent = '💸 입금하기';
+
   // Disable start button during deposit phase
   const startBtn = document.getElementById('btn-start');
   startBtn.disabled = true;
   startBtn.textContent = '💸 입금 대기 중...';
+
+  // Add waiting spinner to escrow info
+  let waitingSpinner = document.getElementById('deposit-waiting-indicator');
+  if (!waitingSpinner) {
+    waitingSpinner = document.createElement('div');
+    waitingSpinner.id = 'deposit-waiting-indicator';
+    waitingSpinner.className = 'deposit-waiting-spinner';
+    waitingSpinner.innerHTML = '<div class="mini-spinner"></div><span>블록체인에서 입금 확인 중...</span>';
+    escrowInfo.appendChild(waitingSpinner);
+  }
 
   // Start countdown timer
   let remaining = Math.floor(data.timeoutMs / 1000);
@@ -553,7 +575,9 @@ document.getElementById('btn-send-deposit').addEventListener('click', async () =
 
     await tonConnectUI.sendTransaction(tx);
     socket.emit('confirm-deposit');
-    showError('입금 트랜잭션이 전송되었습니다. 확인 대기 중...');
+    const depositBtn = document.getElementById('btn-send-deposit');
+    depositBtn.disabled = true;
+    depositBtn.textContent = '⏳ 확인 대기 중...';
   } catch (err) {
     console.error('Deposit error:', err);
     showError('입금 실패: ' + (err.message || '트랜잭션이 거부되었습니다.'));
@@ -570,13 +594,18 @@ socket.on('deposit-claimed', (data) => {
 socket.on('all-deposits-confirmed', (data) => {
   document.getElementById('escrow-info').classList.add('hidden');
   if (depositTimerInterval) { clearInterval(depositTimerInterval); depositTimerInterval = null; }
-  showError('✅ 모든 입금이 확인되었습니다! 게임을 시작합니다...');
-  // Game will auto-start from server
+  const ws = document.getElementById('deposit-waiting-indicator');
+  if (ws) ws.remove();
+  // Overlay already shows "게임을 시작합니다..." from server betting-loading event
 });
 
 socket.on('deposit-timeout', (data) => {
+  const bo = document.getElementById('betting-overlay');
+  if (bo) bo.classList.add('hidden');
   document.getElementById('escrow-info').classList.add('hidden');
   if (depositTimerInterval) { clearInterval(depositTimerInterval); depositTimerInterval = null; }
+  const ws = document.getElementById('deposit-waiting-indicator');
+  if (ws) ws.remove();
   const startBtn = document.getElementById('btn-start');
   startBtn.disabled = false;
   startBtn.textContent = '게임 시작';
@@ -586,6 +615,27 @@ socket.on('deposit-timeout', (data) => {
 socket.on('betting-payout', (data) => {
   // Will be handled on game page, but store for display
   sessionStorage.setItem('yut-payout', JSON.stringify(data));
+});
+
+// === Betting Loading Overlay ===
+let _bettingLoadingTimeout = null;
+
+socket.on('betting-loading', (data) => {
+  const overlay = document.getElementById('betting-overlay');
+  const text = document.getElementById('betting-overlay-text');
+  if (text) text.textContent = data.message || '처리 중...';
+  if (overlay) overlay.classList.remove('hidden');
+  // Safety timeout: auto-dismiss after 120s if no follow-up event
+  if (_bettingLoadingTimeout) clearTimeout(_bettingLoadingTimeout);
+  _bettingLoadingTimeout = setTimeout(() => {
+    if (overlay) overlay.classList.add('hidden');
+  }, 120000);
+});
+
+socket.on('betting-loading-done', () => {
+  const overlay = document.getElementById('betting-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  if (_bettingLoadingTimeout) { clearTimeout(_bettingLoadingTimeout); _bettingLoadingTimeout = null; }
 });
 
 // Register wallet when joining room / betting update

@@ -11,6 +11,10 @@
  */
 const { TonClient, WalletContractV4, internal, toNano, fromNano, Address, beginCell } = require('@ton/ton');
 const { mnemonicToPrivateKey } = require('@ton/crypto');
+const fs = require('fs');
+const path = require('path');
+
+const STATE_FILE = path.join(__dirname, 'ton-state.json');
 
 const BETTING_AMOUNT = 0.3; // TON (고정 베팅금액)
 const PLATFORM_FEE_RATE = 0.05; // 5% fee
@@ -36,6 +40,47 @@ class TonEscrow {
     this._gameCounters = new Map();
     this._activeGameIds = new Map(); // roomCode → roomCodeInt (CreateGame에서 저장, Deposit에서 참조)
     this.isTestnet = false;
+  }
+
+  /**
+   * Load persisted state from JSON file
+   */
+  _loadState() {
+    try {
+      if (fs.existsSync(STATE_FILE)) {
+        const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+        if (data.gameCounters) {
+          this._gameCounters = new Map(Object.entries(data.gameCounters).map(
+            ([k, v]) => [k, Number(v)]
+          ));
+        }
+        if (data.activeGameIds) {
+          this._activeGameIds = new Map(Object.entries(data.activeGameIds).map(
+            ([k, v]) => [k, BigInt(v)]
+          ));
+        }
+        console.log(`[TON] State loaded: ${this._gameCounters.size} counters, ${this._activeGameIds.size} active games`);
+      }
+    } catch (err) {
+      console.error('[TON] Failed to load state:', err.message);
+    }
+  }
+
+  /**
+   * Save current state to JSON file
+   */
+  _saveState() {
+    try {
+      const data = {
+        gameCounters: Object.fromEntries(this._gameCounters),
+        activeGameIds: Object.fromEntries(
+          Array.from(this._activeGameIds.entries()).map(([k, v]) => [k, v.toString()])
+        ),
+      };
+      fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[TON] Failed to save state:', err.message);
+    }
   }
 
   async init() {
@@ -82,6 +127,9 @@ class TonEscrow {
           console.log('[TON] Falling back to wallet-based mode (limited).');
         }
       }
+
+      // Restore persisted state
+      this._loadState();
 
       this.initialized = true;
       const ownerAddr = this.wallet.address.toString({ testOnly: this.isTestnet, bounceable: true });
@@ -140,6 +188,7 @@ class TonEscrow {
   _nextGameId(roomCode) {
     const counter = (this._gameCounters.get(roomCode) || 0) + 1;
     this._gameCounters.set(roomCode, counter);
+    this._saveState();
     return this._roomCodeToInt(roomCode);
   }
 
@@ -209,11 +258,9 @@ class TonEscrow {
     }
 
     try {
-      // 이미 이 방에 대한 활성 gameId가 있으면 재사용 (중복 호출 방지)
-      let roomCodeInt = this._activeGameIds.get(roomCode);
-      if (!roomCodeInt) {
-        roomCodeInt = this._nextGameId(roomCode);
-      }
+      // 항상 새 gameId 생성 (리매치 시 이전 ID 충돌 방지)
+      // 중복 호출 방지는 server.js의 _creatingGame 플래그에서 처리
+      const roomCodeInt = this._nextGameId(roomCode);
       const betAmountNano = toNano(betAmount.toString());
 
       const body = beginCell()
@@ -226,6 +273,7 @@ class TonEscrow {
       await this._sendToContract('0.05', body);
       console.log(`[TON] CreateGame sent for room ${roomCode} (${roomCodeInt}), bet: ${betAmount} TON`);
       this._activeGameIds.set(roomCode, roomCodeInt);
+      this._saveState();
       return true;
     } catch (err) {
       console.error(`[TON] CreateGame failed for room ${roomCode}:`, err.message);
@@ -485,7 +533,11 @@ class TonEscrow {
       await this._sendToContract('0.1', body);
 
       console.log(`[TON] SettlePayout sent for room ${roomCode}, ${winnerCount} winner(s)`);
-      this._activeGameIds.delete(roomCode);
+      // 새 게임이 이미 생성됐을 수 있으므로, 현재 ID와 일치할 때만 삭제
+      if (this._activeGameIds.get(roomCode) === roomCodeInt) {
+        this._activeGameIds.delete(roomCode);
+      }
+      this._saveState();
 
       const fee = totalPot * PLATFORM_FEE_RATE;
       const payoutTotal = totalPot - fee;
@@ -527,7 +579,10 @@ class TonEscrow {
       await this._sendToContract('0.1', body);
 
       console.log(`[TON] Refund sent for room ${roomCode}`);
-      this._activeGameIds.delete(roomCode);
+      if (this._activeGameIds.get(roomCode) === roomCodeInt) {
+        this._activeGameIds.delete(roomCode);
+      }
+      this._saveState();
     } catch (err) {
       console.error(`[TON] Refund failed for room ${roomCode}:`, err.message);
     }

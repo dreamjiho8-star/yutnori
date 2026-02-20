@@ -1221,16 +1221,18 @@ io.on('connection', (socket) => {
       const roomCode = currentRoom;
 
       // 1) Create game on contract FIRST (must succeed before taking deposits)
-      socket.emit('room-error', '⏳ 컨트랙트에 게임 생성 중...');
+      io.to(currentRoom).emit('betting-loading', { phase: 'creating', message: '컨트랙트에 게임 생성 중...' });
       const created = await tonEscrow.createGameOnContract(roomCode, rb.betAmount, humanPlayers.length);
       if (!created) {
         room._creatingGame = false;
+        io.to(currentRoom).emit('betting-loading-done');
         return socket.emit('room-error', '❌ 컨트랙트 게임 생성 실패. 다시 시도하세요.');
       }
       room._creatingGame = false;
 
       // 2) Start deposit monitoring (CreateGame already confirmed on-chain)
       room._pendingDeposits = true;
+      io.to(currentRoom).emit('betting-loading', { phase: 'depositing', message: '입금을 기다리는 중...' });
 
       tonEscrow.startDepositMonitoringOnly(
         roomCode,
@@ -1241,12 +1243,14 @@ io.on('connection', (socket) => {
           rb.depositStatus = status;
           const r = rooms[roomCode];
           if (r) r._pendingDeposits = false;
+          io.to(roomCode).emit('betting-loading', { phase: 'starting', message: '게임을 시작합니다...' });
           io.to(roomCode).emit('all-deposits-confirmed', { status });
           // Auto-start game after deposits confirmed
           startGameForRoom(roomCode);
         },
         // onTimeout
         (refundedPlayerIdxs) => {
+          io.to(roomCode).emit('betting-loading-done');
           io.to(roomCode).emit('deposit-timeout', { refundedPlayers: refundedPlayerIdxs });
           if (rooms[roomCode]) {
             rooms[roomCode].betting = null;
