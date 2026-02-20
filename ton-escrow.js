@@ -120,7 +120,7 @@ class TonEscrow {
         // Try loading from compiled contract init (compute address)
         try {
           const { YutEscrow } = require('./contracts/build/YutEscrow_YutEscrow');
-          const contract = await YutEscrow.fromInit(this.wallet.address, 2n);
+          const contract = await YutEscrow.fromInit(this.wallet.address, 3n);
           this.contractAddress = contract.address;
           console.log(`[TON] Smart contract address (computed): ${this.contractAddress.toString({ testOnly: this.isTestnet, bounceable: true })}`);
         } catch (e) {

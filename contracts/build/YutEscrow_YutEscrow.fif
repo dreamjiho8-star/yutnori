@@ -864,7 +864,7 @@ PROGRAM{
       SUB
       s10 PUSH
       DIV
-      30000000 PUSHINT
+      5000000 PUSHINT
       2DUP
       SUB
       1 PUSHINT
@@ -1255,7 +1255,7 @@ PROGRAM{
       s13 s5 s0 XCHG3
       s15 s(-1) PUXC
       __tact_dict_set_int_cell INLINECALLDICT
-      30000000 PUSHINT
+      5000000 PUSHINT
       s0 s8 XCHG
       IF:<{
         s8 s7 PUSH2

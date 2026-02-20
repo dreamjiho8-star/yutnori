@@ -725,7 +725,7 @@ _ %owner() method_id(83229) {
         int $fee = (($totalPot * $self'platformFeeRate) / 10000);
         int $payout = ($totalPot - $fee);
         int $perWinner = ($payout / $msg'winnerCount);
-        int $gasPerSend = 30000000;
+        int $gasPerSend = 5000000;
         $global_send($SendParameters$_constructor_to_value_mode_body($msg'winner1, ($perWinner - $gasPerSend), 1, __gen_cell_cell_e926158bc9dfcf04f52c8aff76218ee61a810be37bdf70e8a7a39e9823366d89()));
         if (( (($msg'winnerCount >= 2)) ? ((~ null?($msg'winner2))) : (false) )) {
             $global_send($SendParameters$_constructor_to_value_mode_body($msg'winner2, ($perWinner - $gasPerSend), 1, __gen_cell_cell_e926158bc9dfcf04f52c8aff76218ee61a810be37bdf70e8a7a39e9823366d89()));
@@ -752,7 +752,7 @@ _ %owner() method_id(83229) {
         $g'settled = true;
         $g'gameActive = false;
         $self'games~__tact_dict_set_int_cell(257, $msg'roomCode, $GameData$_store_cell(($g'betAmount, $g'playerCount, $g'depositCount, $g'gameActive, $g'settled, $g'createdAt, $g'totalDeposited, $g'player1, $g'player2, $g'player3, $g'player4, $g'deposit1, $g'deposit2, $g'deposit3, $g'deposit4), begin_cell()));
-        int $gasPerSend = 30000000;
+        int $gasPerSend = 5000000;
         if ($g'deposit1) {
             $global_send($SendParameters$_constructor_to_value_mode_body($g'player1, ($g'betAmount - $gasPerSend), 1, __gen_cell_cell_465cb05014add14e7378b92625e83039cd948d20b68a761683349a8a19f5934f()));
         }

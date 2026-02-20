@@ -217,7 +217,7 @@ contract YutEscrow with Deployable, Ownable {
         let perWinner: Int = payout / msg.winnerCount;
 
         // Send to winners
-        let gasPerSend: Int = ton("0.03");
+        let gasPerSend: Int = ton("0.005");
 
         send(SendParameters{
             to: msg.winner1,
@@ -271,7 +271,7 @@ contract YutEscrow with Deployable, Ownable {
         g.gameActive = false;
         self.games.set(msg.roomCode, g);
 
-        let gasPerSend: Int = ton("0.03");
+        let gasPerSend: Int = ton("0.005");
 
         if (g.deposit1) {
             send(SendParameters{

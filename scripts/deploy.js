@@ -70,7 +70,7 @@ async function deploy() {
   }
 
   // Create contract
-  const CONTRACT_VERSION = 2n; // v2: WithdrawFees 추가
+  const CONTRACT_VERSION = 3n; // v3: gasPerSend 0.03 → 0.005
   const contract = await YutEscrow.fromInit(ownerAddress, CONTRACT_VERSION);
   const contractAddress = contract.address.toString();
 
