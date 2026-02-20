@@ -664,6 +664,45 @@ socket.on('betting-update', function bettingWalletReregister(data) {
   }
 });
 
+// === Socket reconnect: auto-rejoin room (모바일 지갑 앱 갔다올 때 등) ===
+socket.on('connect', () => {
+  // 이미 방에 들어가 있었으면 자동 재입장
+  if (roomCode && myPlayerIdx !== null) {
+    const reconnToken = sessionStorage.getItem('yut-reconnToken') || '';
+    console.log('[Lobby] Socket reconnected, re-joining room', roomCode);
+    socket.emit('join-room', {
+      roomCode,
+      name: getName(),
+      pid: myPlayerId,
+      reconnToken
+    });
+    // 지갑도 재등록
+    if (walletAddress) {
+      setTimeout(() => socket.emit('register-wallet', { address: walletAddress }), 500);
+    }
+  }
+  // Hide disconnect overlay
+  const dco = document.getElementById('lobby-disconnect-overlay');
+  if (dco) dco.classList.add('hidden');
+});
+
+socket.on('disconnect', () => {
+  if (roomCode) {
+    const dco = document.getElementById('lobby-disconnect-overlay');
+    if (dco) dco.classList.remove('hidden');
+  }
+});
+
+// 모바일: 탭이 다시 보이면 소켓 재연결 강제 시도
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && roomCode) {
+    if (!socket.connected) {
+      console.log('[Lobby] Tab visible, forcing reconnect');
+      socket.connect();
+    }
+  }
+});
+
 // Auto-rejoin room after game ends
 const urlParams = new URLSearchParams(window.location.search);
 const rejoinCode = urlParams.get('rejoin');

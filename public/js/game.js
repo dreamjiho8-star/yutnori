@@ -849,6 +849,16 @@ socket.on('connect', () => {
   joinRoom();
 });
 
+// 모바일: 탭이 다시 보이면 소켓 재연결 강제 시도
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (!socket.connected) {
+      console.log('[Game] Tab visible, forcing reconnect');
+      socket.connect();
+    }
+  }
+});
+
 socket.on('room-joined', (data) => {
   if (data?.reconnToken) sessionStorage.setItem('yut-reconnToken', data.reconnToken);
   document.getElementById('disconnect-overlay').classList.add('hidden');
