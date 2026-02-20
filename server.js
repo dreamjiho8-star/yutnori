@@ -1238,9 +1238,14 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const idx = room.players.findIndex(p => p === null);
+    let idx = room.players.findIndex(p => p === null);
     if (idx === -1) {
-      return socket.emit('room-error', '방이 가득 찼습니다.');
+      // 빈 슬롯 없으면 연결 끊긴 플레이어 슬롯 교체 (모바일 탭 종료 후 재접속)
+      idx = room.players.findIndex(p => p && !p.isCOM && !p.connected);
+      if (idx === -1) {
+        return socket.emit('room-error', '방이 가득 찼습니다.');
+      }
+      console.log(`[Room ${code}] Replacing disconnected player at slot ${idx} with new player`);
     }
 
     let assignTeam;

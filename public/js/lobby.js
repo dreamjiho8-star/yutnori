@@ -108,14 +108,15 @@ let isHost = false;
 let roomCode = null;
 let gameMode = '1v1';
 
-// Generate or retrieve persistent player ID
-let myPlayerId = sessionStorage.getItem('yut-pid');
+// Generate or retrieve persistent player ID (localStorage로 탭 종료에도 보존)
+let myPlayerId = localStorage.getItem('yut-pid') || sessionStorage.getItem('yut-pid');
 if (!myPlayerId) {
   const arr = new Uint8Array(12);
   crypto.getRandomValues(arr);
   myPlayerId = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
-  sessionStorage.setItem('yut-pid', myPlayerId);
 }
+localStorage.setItem('yut-pid', myPlayerId);
+sessionStorage.setItem('yut-pid', myPlayerId);
 
 // Mode selection
 document.querySelectorAll('.btn-mode').forEach(btn => {
@@ -168,7 +169,12 @@ codeInput.addEventListener('keypress', (e) => {
 socket.on('room-created', (data) => {
   roomCode = data.roomCode;
   myPlayerIdx = data.playerIdx;
-  if (data.reconnToken) sessionStorage.setItem('yut-reconnToken', data.reconnToken);
+  if (data.reconnToken) {
+    sessionStorage.setItem('yut-reconnToken', data.reconnToken);
+    localStorage.setItem('yut-reconnToken', data.reconnToken);
+  }
+  sessionStorage.setItem('yut-lobby-room', roomCode);
+  localStorage.setItem('yut-lobby-room', roomCode);
   isHost = true;
   showRoom();
   // Register wallet if already connected
@@ -180,7 +186,12 @@ socket.on('room-created', (data) => {
 socket.on('room-joined', (data) => {
   roomCode = data.roomCode;
   myPlayerIdx = data.playerIdx;
-  if (data.reconnToken) sessionStorage.setItem('yut-reconnToken', data.reconnToken);
+  if (data.reconnToken) {
+    sessionStorage.setItem('yut-reconnToken', data.reconnToken);
+    localStorage.setItem('yut-reconnToken', data.reconnToken);
+  }
+  sessionStorage.setItem('yut-lobby-room', roomCode);
+  localStorage.setItem('yut-lobby-room', roomCode);
   isHost = false;
   showRoom();
 });
@@ -360,6 +371,9 @@ socket.on('room-update', (data) => {
 });
 
 socket.on('game-started', (data) => {
+  // 게임 시작 → 로비 방 정보 클리어 (game.js가 관리)
+  sessionStorage.removeItem('yut-lobby-room');
+  localStorage.removeItem('yut-lobby-room');
   // Dismiss betting overlay before navigation
   const bo = document.getElementById('betting-overlay');
   if (bo) bo.classList.add('hidden');
@@ -713,4 +727,14 @@ if (rejoinCode) {
   if (savedName) nameInput.value = savedName;
   const savedReconnToken = sessionStorage.getItem('yut-reconnToken') || '';
   socket.emit('join-room', { roomCode: rejoinCode, name: getName(), pid: myPlayerId, reconnToken: savedReconnToken });
+} else {
+  // 모바일 앱 전환 후 페이지 리로드 시 자동 복귀
+  const lobbyRoom = sessionStorage.getItem('yut-lobby-room') || localStorage.getItem('yut-lobby-room');
+  if (lobbyRoom) {
+    const savedName = sessionStorage.getItem('yut-name') || localStorage.getItem('yut-name') || '';
+    if (savedName) nameInput.value = savedName;
+    const savedReconnToken = sessionStorage.getItem('yut-reconnToken') || localStorage.getItem('yut-reconnToken') || '';
+    console.log('[Lobby] Page reloaded, auto-rejoining room', lobbyRoom);
+    socket.emit('join-room', { roomCode: lobbyRoom, name: getName(), pid: myPlayerId, reconnToken: savedReconnToken });
+  }
 }
