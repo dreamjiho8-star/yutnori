@@ -313,12 +313,17 @@ class TonEscrow {
       .storeUint(roomCodeInt, 64) // roomCode
       .endCell();
 
+    // 가스 버퍼: forwarding fee로 context().value가 betAmount 미만이 되는 것을 방지
+    // 여분의 TON은 컨트랙트에 남음 (수수료로 축적)
+    const GAS_BUFFER = 0.05;
+    const depositValue = betAmount + GAS_BUFFER;
+
     return {
       validUntil: Math.floor(Date.now() / 1000) + 300,
       messages: [
         {
           address: this.contractAddress.toString({ testOnly: this.isTestnet, bounceable: true }),
-          amount: toNano(betAmount.toString()).toString(),
+          amount: toNano(depositValue.toString()).toString(),
           payload: body.toBoc().toString('base64'),
         },
       ],
@@ -444,7 +449,8 @@ class TonEscrow {
       // Check depositCount vs playerCount
       const depositCount = Number(gameState.depositCount || 0);
       const playerCount = info.players.length;
-      console.log(`[TON] Poll: room ${roomCode} deposits=${depositCount}/${playerCount}`);
+      const gameId = this._activeGameIds.get(roomCode) || '?';
+      console.log(`[TON] Poll: room ${roomCode} deposits=${depositCount}/${playerCount} (gameId=${gameId}, bet=${gameState.betAmount}, active=${gameState.gameActive})`);
 
       if (depositCount >= playerCount) {
         this._clearMonitoring(roomCode);
