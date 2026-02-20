@@ -1722,6 +1722,43 @@ function getMyFFAKey() {
 }
 
 // ============================================
+// Keyboard Shortcuts
+// ============================================
+document.addEventListener('keydown', (e) => {
+  // 채팅 입력 중에는 단축키 무시
+  if (document.activeElement === gameChatInput) return;
+
+  // 스페이스바: 윷 던지기
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (canThrow) {
+      document.getElementById('btn-throw').click();
+    }
+    return;
+  }
+
+  // 숫자키 1~6: 말 선택 (이동 단계에서만)
+  const num = parseInt(e.key);
+  if (num >= 1 && num <= 6) {
+    if (!isMyTurn || selectedMoveIdx === null || !gameState || gameState.throwPhase) return;
+    const tokenIdx = num - 1;
+    const team = getTeamForTurn(gameState.currentPlayer);
+    const tokens = gameState.tokens[team];
+    if (tokenIdx >= tokens.length) return;
+    const t = tokens[tokenIdx];
+    if (t.pos === -2 || t.pos === -3) return;
+    const move = gameState.pendingMoves[selectedMoveIdx];
+    if (!move) return;
+    if (t.pos === -1 && move.value === -1) return;
+    sfx.move();
+    stopMoveTimer();
+    socket.emit('move-token', { tokenIdx, moveIdx: selectedMoveIdx });
+    selectedMoveIdx = null;
+    return;
+  }
+});
+
+// ============================================
 // Sidebar Collapse (mobile)
 // ============================================
 const collapseBtn = document.getElementById('sidebar-collapse');
