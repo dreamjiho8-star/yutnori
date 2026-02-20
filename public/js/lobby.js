@@ -578,8 +578,18 @@ document.getElementById('btn-send-deposit').addEventListener('click', async () =
     const depositBtn = document.getElementById('btn-send-deposit');
     depositBtn.disabled = true;
     depositBtn.textContent = '⏳ 확인 대기 중...';
+    // 30초 후에도 입금 미확인 시 버튼 재활성화 (바운스 대비)
+    window._depositRetryTimeout = setTimeout(() => {
+      if (depositBtn.disabled && depositBtn.textContent.includes('확인 대기')) {
+        depositBtn.disabled = false;
+        depositBtn.textContent = '🔄 다시 입금하기';
+      }
+    }, 30000);
   } catch (err) {
     console.error('Deposit error:', err);
+    const depositBtn = document.getElementById('btn-send-deposit');
+    depositBtn.disabled = false;
+    depositBtn.textContent = '💸 입금하기';
     showError('입금 실패: ' + (err.message || '트랜잭션이 거부되었습니다.'));
   }
 });
@@ -594,6 +604,7 @@ socket.on('deposit-claimed', (data) => {
 socket.on('all-deposits-confirmed', (data) => {
   document.getElementById('escrow-info').classList.add('hidden');
   if (depositTimerInterval) { clearInterval(depositTimerInterval); depositTimerInterval = null; }
+  if (window._depositRetryTimeout) { clearTimeout(window._depositRetryTimeout); window._depositRetryTimeout = null; }
   const ws = document.getElementById('deposit-waiting-indicator');
   if (ws) ws.remove();
   // Overlay already shows "게임을 시작합니다..." from server betting-loading event
@@ -604,6 +615,7 @@ socket.on('deposit-timeout', (data) => {
   if (bo) bo.classList.add('hidden');
   document.getElementById('escrow-info').classList.add('hidden');
   if (depositTimerInterval) { clearInterval(depositTimerInterval); depositTimerInterval = null; }
+  if (window._depositRetryTimeout) { clearTimeout(window._depositRetryTimeout); window._depositRetryTimeout = null; }
   const ws = document.getElementById('deposit-waiting-indicator');
   if (ws) ws.remove();
   const startBtn = document.getElementById('btn-start');
