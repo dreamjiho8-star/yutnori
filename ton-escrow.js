@@ -194,6 +194,27 @@ class TonEscrow {
   }
 
   /**
+   * Wait until the game is visible on-chain (contract processed CreateGame)
+   * Polls every 3 seconds up to timeoutMs
+   */
+  async _waitForGameOnChain(roomCode, timeoutMs = 30000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const state = await this.getGameState(roomCode);
+        if (state && state.gameActive) {
+          console.log(`[TON] Game confirmed on-chain for ${roomCode} (${Date.now() - start}ms)`);
+          return true;
+        }
+      } catch (e) {
+        // 429 등 에러 무시, 재시도
+      }
+    }
+    return false;
+  }
+
+  /**
    * Retry helper for TonCenter API calls (handles 429 rate limits)
    */
   async _retry(fn, retries = 5, baseWait = 2000) {
@@ -285,6 +306,14 @@ class TonEscrow {
       console.log(`[TON] CreateGame sent for room ${roomCode} (${roomCodeInt}), bet: ${betAmount} TON`);
       this._activeGameIds.set(roomCode, roomCodeInt);
       this._saveState();
+
+      // 컨트랙트에서 게임이 실제로 생성될 때까지 대기
+      // (seqno 증가 = 지갑이 메시지를 보냄, 하지만 컨트랙트 처리는 1~2블록 뒤)
+      const confirmed = await this._waitForGameOnChain(roomCode, 30000);
+      if (!confirmed) {
+        console.warn(`[TON] CreateGame sent but not yet visible on-chain for ${roomCode} — proceeding anyway`);
+      }
+
       return true;
     } catch (err) {
       console.error(`[TON] CreateGame failed for room ${roomCode}:`, err.message);
