@@ -552,7 +552,7 @@ document.getElementById('btn-send-deposit').addEventListener('click', async () =
     // The server provides a pre-built transaction via API, or we build it client-side
     let tx;
     try {
-      const res = await fetch(`/api/ton/deposit-tx?roomCode=${encodeURIComponent(memo)}&amount=${amount}`);
+      const res = await fetch(`/api/ton/deposit-tx?roomCode=${encodeURIComponent(memo)}&amount=${amount}&_t=${Date.now()}`, { cache: 'no-store' });
       const data = await res.json();
       if (data.transaction) {
         tx = data.transaction;

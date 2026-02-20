@@ -102,6 +102,9 @@ app.get('/api/ton/info', (req, res) => {
 
 // Deposit transaction builder endpoint (for smart contract deposits)
 app.get('/api/ton/deposit-tx', (req, res) => {
+  // 브라우저 캐시 방지: 리매치 시 이전 게임의 tx를 재사용하면 입금이 바운스됨
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.set('Pragma', 'no-cache');
   const { roomCode, amount } = req.query;
   if (!roomCode || !amount) return res.json({ transaction: null });
   if (!tonEscrow.isReady()) return res.json({ transaction: null });
