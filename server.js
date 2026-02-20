@@ -205,6 +205,14 @@ app.get('/api/admin/contract', adminAuth, async (req, res) => {
     const balance = await tonEscrow.getContractBalance();
     const address = tonEscrow.getContractAddress();
     const ownerAddress = tonEscrow.wallet?.address?.toString({ testOnly: tonEscrow.isTestnet, bounceable: true }) || '-';
+    let ownerBalance = null;
+    try {
+      if (tonEscrow.walletContract) {
+        const bal = await tonEscrow.walletContract.getBalance();
+        const { fromNano } = require('@ton/ton');
+        ownerBalance = fromNano(bal);
+      }
+    } catch (e) { /* rate limit 등 무시 */ }
     const activeGames = Array.from(tonEscrow._activeGameIds.entries()).map(([room, id]) => ({ room, gameId: id.toString() }));
     const pendingDeposits = Array.from(tonEscrow.pendingDeposits.keys());
     res.json({
@@ -213,6 +221,7 @@ app.get('/api/admin/contract', adminAuth, async (req, res) => {
       contractAddress: address,
       ownerAddress,
       balance,
+      ownerBalance,
       activeGames,
       pendingDeposits,
       platformFeeRate: '5%',

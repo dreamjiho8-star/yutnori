@@ -162,7 +162,8 @@
       <div id="contract-info">
         <div class="stat-row"><span class="stat-label">상태</span><span class="stat-value" id="c-status">-</span></div>
         <div class="stat-row"><span class="stat-label">네트워크</span><span class="stat-value" id="c-network">-</span></div>
-        <div class="stat-row"><span class="stat-label">잔액</span><span class="stat-value green" id="c-balance">-</span></div>
+        <div class="stat-row"><span class="stat-label">컨트랙트 잔액</span><span class="stat-value green" id="c-balance">-</span></div>
+        <div class="stat-row"><span class="stat-label">오너 지갑 잔액</span><span class="stat-value blue" id="c-owner-balance">-</span></div>
         <div class="stat-row"><span class="stat-label">수수료율</span><span class="stat-value" id="c-fee">-</span></div>
         <div class="stat-row"><span class="stat-label">베팅금액</span><span class="stat-value" id="c-bet">-</span></div>
         <div class="stat-row"><span class="stat-label">활성 게임</span><span class="stat-value" id="c-active">-</span></div>
@@ -345,6 +346,7 @@ async function loadContract() {
     document.getElementById('c-status').innerHTML = '<span style="color:#2ecc71">활성</span>';
     document.getElementById('c-network').textContent = data.testnet ? '테스트넷' : '메인넷';
     document.getElementById('c-balance').textContent = data.balance + ' TON';
+    document.getElementById('c-owner-balance').textContent = data.ownerBalance ? data.ownerBalance + ' TON' : '-';
     document.getElementById('c-fee').textContent = data.platformFeeRate;
     document.getElementById('c-bet').textContent = data.bettingAmount + ' TON';
     document.getElementById('c-active').textContent = data.activeGames.length;
