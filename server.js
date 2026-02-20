@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const { TonEscrow, BETTING_AMOUNT } = require('./ton-escrow');
 
@@ -86,6 +87,40 @@ function isValidTonAddress(addr) {
 }
 
 
+// === Game Config (관리자 페이지에서 조정 가능) ===
+const CONFIG_FILE = path.join(__dirname, 'game-config.json');
+const gameConfig = {
+  flatProb: 0.54,       // 각 윷 막대가 앞면(flat)일 확률
+  backdoProb: 0.17,     // 1개만 flat일 때 빽도가 될 확률
+  moveTimerSec: 15,     // 말 이동 제한시간 (초)
+};
+
+function loadGameConfig() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      Object.assign(gameConfig, JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')));
+      console.log('[CONFIG] Game config loaded:', gameConfig);
+    }
+  } catch (e) { console.error('[CONFIG] Load error:', e.message); }
+}
+function saveGameConfig() {
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(gameConfig, null, 2), 'utf8');
+  } catch (e) { console.error('[CONFIG] Save error:', e.message); }
+}
+loadGameConfig();
+
+// === 관리자 인증 미들웨어 ===
+function adminAuth(req, res, next) {
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (!adminSecret) return res.status(403).json({ error: 'ADMIN_SECRET not configured' });
+  const authHeader = req.headers['authorization'];
+  if (authHeader !== `Bearer ${adminSecret}`) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
 // === TON Escrow ===
 const tonEscrow = new TonEscrow();
 tonEscrow.init().catch(err => console.error('[TON] Init error:', err));
@@ -114,47 +149,145 @@ app.get('/api/ton/deposit-tx', (req, res) => {
   res.json({ transaction: tx });
 });
 
-// === 관리자: 수수료 출금 API ===
-app.post('/api/ton/withdraw-fees', async (req, res) => {
-  // 관리자 인증: ADMIN_SECRET 환경변수와 일치해야 함
+// ============================================
+// 관리자 API
+// ============================================
+
+// 관리자 로그인 확인
+app.post('/api/admin/login', (req, res) => {
   const adminSecret = process.env.ADMIN_SECRET;
   if (!adminSecret) return res.status(403).json({ error: 'ADMIN_SECRET not configured' });
+  if (req.body.password !== adminSecret) return res.status(403).json({ error: 'Wrong password' });
+  res.json({ success: true, token: adminSecret });
+});
 
-  const authHeader = req.headers['authorization'];
-  if (authHeader !== `Bearer ${adminSecret}`) {
-    return res.status(403).json({ error: 'Unauthorized' });
-  }
+// 게임 설정 조회
+app.get('/api/admin/config', adminAuth, (req, res) => {
+  res.json(gameConfig);
+});
 
-  if (!tonEscrow.isReady()) return res.status(503).json({ error: 'TON not initialized' });
+// 게임 설정 변경
+app.post('/api/admin/config', adminAuth, (req, res) => {
+  const { flatProb, backdoProb, moveTimerSec } = req.body;
+  if (flatProb !== undefined) gameConfig.flatProb = Math.max(0, Math.min(1, Number(flatProb)));
+  if (backdoProb !== undefined) gameConfig.backdoProb = Math.max(0, Math.min(1, Number(backdoProb)));
+  if (moveTimerSec !== undefined) gameConfig.moveTimerSec = Math.max(5, Math.min(120, Math.round(Number(moveTimerSec))));
+  saveGameConfig();
+  console.log('[ADMIN] Config updated:', gameConfig);
+  res.json({ success: true, config: gameConfig });
+});
 
+// 서버 현황 (방, 플레이어, 진행 중 게임)
+app.get('/api/admin/stats', adminAuth, (req, res) => {
+  const roomList = Object.entries(rooms).map(([code, room]) => {
+    const playerCount = room.players.filter(p => p && !p.isCOM).length;
+    const comCount = room.players.filter(p => p?.isCOM).length;
+    const connectedCount = room.players.filter(p => p && !p.isCOM && p.connected).length;
+    return {
+      code,
+      mode: room.mode,
+      players: playerCount,
+      coms: comCount,
+      connected: connectedCount,
+      gameStarted: !!room.game?.started,
+      winner: room.game?.winner || null,
+      betting: !!room.betting?.enabled,
+    };
+  });
+  const connectedSockets = io.sockets.sockets.size;
+  res.json({ rooms: roomList, totalRooms: roomList.length, connectedSockets });
+});
+
+// 컨트랙트 현황
+app.get('/api/admin/contract', adminAuth, async (req, res) => {
+  if (!tonEscrow.isReady()) return res.json({ enabled: false });
   try {
-    const amount = parseFloat(req.body.amount) || 0;
     const balance = await tonEscrow.getContractBalance();
-    await tonEscrow.withdrawFees(amount);
-    res.json({ success: true, contractBalance: balance, requested: amount || 'all' });
+    const address = tonEscrow.getContractAddress();
+    const ownerAddress = tonEscrow.getAddress();
+    const activeGames = Array.from(tonEscrow._activeGameIds.entries()).map(([room, id]) => ({ room, gameId: id.toString() }));
+    const pendingDeposits = Array.from(tonEscrow.pendingDeposits.keys());
+    res.json({
+      enabled: true,
+      testnet: tonEscrow.isTestnet,
+      contractAddress: address,
+      ownerAddress,
+      balance,
+      activeGames,
+      pendingDeposits,
+      platformFeeRate: '5%',
+      bettingAmount: BETTING_AMOUNT,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// === 관리자: 컨트랙트 잔액 조회 ===
-app.get('/api/ton/contract-balance', async (req, res) => {
-  const adminSecret = process.env.ADMIN_SECRET;
-  if (!adminSecret) return res.status(403).json({ error: 'ADMIN_SECRET not configured' });
-
-  const authHeader = req.headers['authorization'];
-  if (authHeader !== `Bearer ${adminSecret}`) {
-    return res.status(403).json({ error: 'Unauthorized' });
-  }
-
+// 수수료 출금
+app.post('/api/admin/withdraw', adminAuth, async (req, res) => {
   if (!tonEscrow.isReady()) return res.status(503).json({ error: 'TON not initialized' });
-
   try {
+    const amount = parseFloat(req.body.amount) || 0;
+    await tonEscrow.withdrawFees(amount);
     const balance = await tonEscrow.getContractBalance();
-    res.json({ balance, unit: 'TON' });
+    res.json({ success: true, newBalance: balance });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// 게임 강제 환불
+app.post('/api/admin/force-refund', adminAuth, async (req, res) => {
+  const { roomCode } = req.body;
+  if (!roomCode) return res.status(400).json({ error: 'roomCode required' });
+  if (!tonEscrow.isReady()) return res.status(503).json({ error: 'TON not initialized' });
+  try {
+    await tonEscrow.refundOnContract(roomCode);
+    res.json({ success: true, message: `Refund sent for ${roomCode}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 윷 확률 시뮬레이션 (현재 설정으로 10000번 던져본 결과)
+app.get('/api/admin/yut-simulation', adminAuth, (req, res) => {
+  const counts = { '빽도': 0, '도': 0, '개': 0, '걸': 0, '윷': 0, '모': 0 };
+  const N = 10000;
+  for (let t = 0; t < N; t++) {
+    let flats = 0;
+    for (let i = 0; i < 4; i++) {
+      if (Math.random() < gameConfig.flatProb) flats++;
+    }
+    if (flats === 1 && Math.random() < gameConfig.backdoProb) {
+      counts['빽도']++;
+    } else {
+      const names = ['모', '도', '개', '걸', '윷'];
+      counts[names[flats]]++;
+    }
+  }
+  const probs = {};
+  for (const [k, v] of Object.entries(counts)) {
+    probs[k] = (v / N * 100).toFixed(1) + '%';
+  }
+  res.json({ simulations: N, counts, probabilities: probs });
+});
+
+// 하위 호환: 기존 withdraw-fees / contract-balance 엔드포인트
+app.post('/api/ton/withdraw-fees', adminAuth, async (req, res) => {
+  if (!tonEscrow.isReady()) return res.status(503).json({ error: 'TON not initialized' });
+  try {
+    const amount = parseFloat(req.body.amount) || 0;
+    const balance = await tonEscrow.getContractBalance();
+    await tonEscrow.withdrawFees(amount);
+    res.json({ success: true, contractBalance: balance, requested: amount || 'all' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.get('/api/ton/contract-balance', adminAuth, async (req, res) => {
+  if (!tonEscrow.isReady()) return res.status(503).json({ error: 'TON not initialized' });
+  try {
+    const balance = await tonEscrow.getContractBalance();
+    res.json({ balance, unit: 'TON' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 const rooms = {};
@@ -372,10 +505,10 @@ function throwYut() {
   let flats = 0;
   // seed 바이트만 사용 (Math.random 혼합 제거 → 시드로 결과 검증 가능)
   for (let i = 0; i < 4; i++) {
-    if (seedBuf[i] / 256 < 0.54) flats++;
+    if (seedBuf[i] / 256 < gameConfig.flatProb) flats++;
   }
   if (flats === 1) {
-    if (seedBuf[4] / 256 < 0.17) {
+    if (seedBuf[4] / 256 < gameConfig.backdoProb) {
       return { name: '빽도', value: -1, flats: -1, extraTurn: false, seed, seedHash };
     }
   }
@@ -508,7 +641,8 @@ function broadcastGameState(roomCode) {
     log: room.game.log.slice(-20),
     logTotal: room.game.log.length,
     winner: room.game.winner,
-    stats: room.game.stats || null
+    stats: room.game.stats || null,
+    moveTimerSec: gameConfig.moveTimerSec,
   });
 }
 

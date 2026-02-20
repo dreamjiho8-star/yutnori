@@ -344,7 +344,7 @@ class TonEscrow {
 
     // 가스 버퍼: forwarding fee로 context().value가 betAmount 미만이 되는 것을 방지
     // 여분의 TON은 컨트랙트에 남음 (수수료로 축적)
-    const GAS_BUFFER = 0.05;
+    const GAS_BUFFER = 0.01; // 전달 수수료 보상용 (~0.003-0.005 TON)
     const depositValue = betAmount + GAS_BUFFER;
 
     return {

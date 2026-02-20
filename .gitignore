@@ -3,3 +3,4 @@ node_modules/
 .claude/
 .env
 ton-state.json
+game-config.json

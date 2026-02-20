@@ -835,7 +835,7 @@ let selectedMoveIdx = null;
 let _autoMoveScheduled = false;
 let _moveTimerInterval = null;
 let _moveTimerDeadline = null;
-const MOVE_TIME_LIMIT = 10; // seconds
+let MOVE_TIME_LIMIT = 15; // seconds (서버에서 동적으로 업데이트)
 let isMyTurn = false;
 let canThrow = true;
 let playerNames = [];
@@ -869,6 +869,9 @@ socket.on('game-started', (data) => {
 });
 
 socket.on('game-state', (state) => {
+  // 서버 설정의 이동 제한시간 반영
+  if (state.moveTimerSec) MOVE_TIME_LIMIT = state.moveTimerSec;
+
   // Detect events from log for sound effects + emotional reactions
   // Use logTotal (full server log count) to correctly detect new entries
   const logTotal = state.logTotal || state.log.length;
