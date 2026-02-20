@@ -39,6 +39,7 @@ class TonEscrow {
     this.pendingDeposits = new Map();
     this._gameCounters = new Map();
     this._activeGameIds = new Map(); // roomCode → roomCodeInt (CreateGame에서 저장, Deposit에서 참조)
+    this._sendQueue = Promise.resolve(); // 트랜잭션 직렬화 큐 (seqno 충돌 방지)
     this.isTestnet = false;
   }
 
@@ -214,10 +215,20 @@ class TonEscrow {
 
   /**
    * Send a message to the contract via owner wallet
+   * Queued to prevent seqno conflicts from concurrent transactions
    */
   async _sendToContract(value, body) {
     if (!this.contractAddress) throw new Error('Contract not deployed');
 
+    // 트랜잭션 직렬화: 이전 트랜잭션이 완료될 때까지 대기
+    // payout/withdrawFees/createGame 동시 호출 시 seqno 충돌 방지
+    const result = this._sendQueue = this._sendQueue
+      .catch(() => {}) // 이전 실패가 다음 tx를 막지 않도록
+      .then(() => this._sendToContractInner(value, body));
+    return result;
+  }
+
+  async _sendToContractInner(value, body) {
     const seqno = await this._retry(() => this.walletContract.getSeqno());
     await new Promise(r => setTimeout(r, 2000)); // avoid 429 burst
 
