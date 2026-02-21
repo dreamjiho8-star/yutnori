@@ -192,6 +192,7 @@ app.get('/api/admin/stats', adminAuth, (req, res) => {
       gameStarted: !!room.game?.started,
       winner: room.game?.winner || null,
       betting: !!room.betting?.enabled,
+      playerDetails: room.players.map(p => p ? { name: p.name, team: p.team, wins: p.wins || 0, losses: p.losses || 0, connected: p.connected, isCOM: !!p.isCOM } : null),
     };
   });
   const connectedSockets = io.sockets.sockets.size;
@@ -505,6 +506,27 @@ function generateRoomCode() {
   return code;
 }
 
+function updateWinLossStats(room, winnerKey) {
+  const ffaMode = isFFA(room.mode);
+  if (ffaMode) {
+    // FFA: winner is 'P0','P1',... — map to playerOrder index
+    const winnerTurnIdx = parseInt(winnerKey.replace('P', ''));
+    const winnerOrigIdx = room.playerOrder[winnerTurnIdx];
+    room.players.forEach((p, i) => {
+      if (!p || p.isCOM) return;
+      if (i === winnerOrigIdx) p.wins = (p.wins || 0) + 1;
+      else p.losses = (p.losses || 0) + 1;
+    });
+  } else {
+    // Team mode: winner is 'A' or 'B'
+    room.players.forEach(p => {
+      if (!p || p.isCOM) return;
+      if (p.team === winnerKey) p.wins = (p.wins || 0) + 1;
+      else p.losses = (p.losses || 0) + 1;
+    });
+  }
+}
+
 function throwYut() {
   // Provable fairness: seed만으로 결과를 재현할 수 있음 (검증 가능)
   const seedBuf = crypto.randomBytes(32);
@@ -630,7 +652,7 @@ function broadcastRoom(roomCode) {
   if (!room) return;
   const rb = roomBetting[roomCode];
   io.to(roomCode).emit('room-update', {
-    players: room.players.map(p => p ? { name: p.name, team: p.team, ready: p.ready, connected: p.connected, isCOM: !!p.isCOM } : null),
+    players: room.players.map(p => p ? { name: p.name, team: p.team, ready: p.ready, connected: p.connected, isCOM: !!p.isCOM, wins: p.wins || 0, losses: p.losses || 0 } : null),
     hostIdx: room.hostIdx,
     mode: room.mode || '2v2',
     isFFA: isFFA(room.mode),
@@ -893,6 +915,7 @@ function scheduleCOMTurn(roomCode) {
 
           if (checkWin(tokens)) {
             room2.game.winner = team2;
+            updateWinLossStats(room2, team2);
             if (comFFA2) {
               const winnerOrigIdx2 = room2.playerOrder[room2.game.currentPlayer];
               const winnerName2 = room2.players[winnerOrigIdx2]?.name || 'COM';
@@ -1174,7 +1197,9 @@ io.on('connection', (socket) => {
       name: sanitizeName(data.name),
       team: isFFA(mode) ? null : 'A',
       ready: false,
-      connected: true
+      connected: true,
+      wins: 0,
+      losses: 0
     };
 
     currentRoom = code;
@@ -1269,7 +1294,9 @@ io.on('connection', (socket) => {
       name: sanitizeName(data.name),
       team: assignTeam,
       ready: false,
-      connected: true
+      connected: true,
+      wins: 0,
+      losses: 0
     };
 
     currentRoom = code;
@@ -1566,15 +1593,15 @@ io.on('connection', (socket) => {
       room.game.log.push(`✅ ${playerName}의 말이 완주했습니다! (${count}개)`);
 
       if (checkWin(tokens)) {
+        room.game.winner = team;
+        updateWinLossStats(room, team);
         if (ffaMode) {
-          room.game.winner = team;
           const winnerOrigIdx = room.playerOrder[room.game.currentPlayer];
           const winnerName = room.players[winnerOrigIdx]?.name || playerName;
           room.game.log.push(`🏆 ${winnerName} 승리!`);
           handleBettingPayout(currentRoom, team);
           io.to(currentRoom).emit('game-over', { winner: team, winnerName });
         } else {
-          room.game.winner = team;
           room.game.log.push(`🏆 팀 ${team} 승리!`);
           handleBettingPayout(currentRoom, team);
           io.to(currentRoom).emit('game-over', { winner: team });

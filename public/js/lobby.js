@@ -276,6 +276,7 @@ socket.on('room-update', (data) => {
           let label = (p.name || '').slice(0, 10);
           if (p.idx === data.hostIdx) label += ' 👑';
           if (p.idx === myPlayerIdx) label += ' (나)';
+          if (p.wins || p.losses) label += ` (${p.wins}승 ${p.losses}패)`;
           slot.textContent = label;
           slot.classList.add('filled');
           if (p.ready) slot.classList.add('ready');
@@ -342,6 +343,7 @@ socket.on('room-update', (data) => {
             let label = (p.name || '').slice(0, 10);
             if (p.idx === data.hostIdx) label += ' 👑';
             if (p.idx === myPlayerIdx) label += ' (나)';
+            if (p.wins || p.losses) label += ` (${p.wins}승 ${p.losses}패)`;
             slot.textContent = label;
             slot.classList.add('filled');
             if (p.ready) slot.classList.add('ready');
