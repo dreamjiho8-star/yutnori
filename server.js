@@ -259,6 +259,30 @@ app.post('/api/admin/force-refund', adminAuth, async (req, res) => {
   }
 });
 
+// 방 강제 폭파
+app.post('/api/admin/destroy-room', adminAuth, (req, res) => {
+  const { roomCode } = req.body;
+  if (!roomCode) return res.status(400).json({ error: 'roomCode required' });
+  const code = roomCode.toUpperCase();
+  if (!rooms[code]) return res.status(404).json({ error: '존재하지 않는 방입니다.' });
+
+  // 방에 있는 모든 클라이언트에게 알림
+  io.to(code).emit('room-destroyed');
+  // 방에 속한 모든 소켓을 room에서 제거
+  const socketsInRoom = io.sockets.adapter.rooms.get(code);
+  if (socketsInRoom) {
+    for (const sid of socketsInRoom) {
+      const s = io.sockets.sockets.get(sid);
+      if (s) s.leave(code);
+    }
+  }
+
+  delete rooms[code];
+  delete roomBetting[code];
+  console.log(`[ADMIN] Room ${code} destroyed`);
+  res.json({ success: true, message: `${code} 방이 폭파되었습니다.` });
+});
+
 // 윷 확률 시뮬레이션 (현재 설정으로 10000번 던져본 결과)
 app.get('/api/admin/yut-simulation', adminAuth, (req, res) => {
   const counts = { '빽도': 0, '도': 0, '개': 0, '걸': 0, '윷': 0, '모': 0 };
@@ -1868,6 +1892,41 @@ io.on('connection', (socket) => {
     const msg = sanitizeMessage(data?.message);
     if (!msg.trim()) return;
     io.to(currentRoom).emit('chat-message', { name, team, message: msg });
+  });
+
+  // === 대기방 나가기 ===
+  socket.on('leave-room', () => {
+    if (!currentRoom) return;
+    const room = rooms[currentRoom];
+    if (!room) return;
+    // 게임 진행 중에는 나가기 불가
+    if (room.game?.started) return;
+    if (playerIdx === null || !room.players[playerIdx]) return;
+
+    const leavingRoom = currentRoom;
+    room.players[playerIdx] = null;
+    socket.leave(leavingRoom);
+    socket.emit('room-left');
+
+    // 호스트가 나간 경우 다음 연결된 플레이어에게 이전
+    if (playerIdx === room.hostIdx) {
+      const nextHost = room.players.findIndex(p => p && !p.isCOM && p.connected);
+      if (nextHost !== -1) {
+        room.hostIdx = nextHost;
+      }
+    }
+
+    currentRoom = null;
+    playerIdx = null;
+
+    // 모든 플레이어가 나갔으면 방 삭제
+    const anyHuman = room.players.some(p => p && !p.isCOM);
+    if (!anyHuman) {
+      delete rooms[leavingRoom];
+      delete roomBetting[leavingRoom];
+    } else {
+      broadcastRoom(leavingRoom);
+    }
   });
 
   socket.on('disconnect', () => {

@@ -220,6 +220,39 @@ btnTeamB.addEventListener('click', () => socket.emit('select-team', { team: 'B' 
 btnReady.addEventListener('click', () => socket.emit('player-ready'));
 btnStart.addEventListener('click', () => socket.emit('start-game'));
 
+// 나가기 버튼
+document.getElementById('btn-leave').addEventListener('click', () => {
+  if (!roomCode) return;
+  socket.emit('leave-room');
+});
+
+function returnToLobby() {
+  roomCode = null;
+  myPlayerIdx = null;
+  isHost = false;
+  sessionStorage.removeItem('yut-lobby-room');
+  localStorage.removeItem('yut-lobby-room');
+  sessionStorage.removeItem('yut-reconnToken');
+  localStorage.removeItem('yut-reconnToken');
+  // URL에서 rejoin 파라미터 제거
+  window.history.replaceState({}, '', '/');
+  // UI 복원
+  roomCard.classList.add('hidden');
+  document.getElementById('chat-card').classList.add('hidden');
+  menuCard.classList.remove('hidden');
+  document.getElementById('name-card').classList.remove('hidden');
+  document.getElementById('mode-card').classList.remove('hidden');
+}
+
+socket.on('room-left', () => {
+  returnToLobby();
+});
+
+socket.on('room-destroyed', () => {
+  returnToLobby();
+  showError('방이 폭파되었습니다.');
+});
+
 socket.on('room-update', (data) => {
   // Update host status dynamically
   isHost = data.hostIdx === myPlayerIdx;

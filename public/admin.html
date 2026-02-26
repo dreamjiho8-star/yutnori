@@ -97,6 +97,11 @@
     .room-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .room-table th { text-align: left; color: #8899aa; font-weight: 500; padding: 6px 8px; border-bottom: 1px solid #1a3a5c; }
     .room-table td { padding: 6px 8px; border-bottom: 1px solid #111a2e; }
+    .btn-destroy {
+      padding: 3px 10px; border: 1px solid #e74c3c; background: #2c1a1a; color: #e74c3c;
+      border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.2s;
+    }
+    .btn-destroy:hover { background: #3c2a2a; }
     .badge {
       display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
     }
@@ -326,13 +331,13 @@ async function loadStats() {
     if (data.rooms.length === 0) {
       list.innerHTML = '<p style="color:#556; font-size:13px;">활성 방 없음</p>';
     } else {
-      let html = '<table class="room-table"><tr><th>코드</th><th>모드</th><th>인원</th><th>상태</th></tr>';
+      let html = '<table class="room-table"><tr><th>코드</th><th>모드</th><th>인원</th><th>상태</th><th></th></tr>';
       for (const r of data.rooms) {
         const status = r.winner ? `<span class="badge badge-gray">종료</span>`
           : r.gameStarted ? `<span class="badge badge-green">게임중</span>`
           : `<span class="badge badge-yellow">대기</span>`;
         const bet = r.betting ? ' 💎' : '';
-        html += `<tr><td><strong>${r.code}</strong></td><td>${r.mode}${bet}</td><td>${r.connected}/${r.players + r.coms}</td><td>${status}</td></tr>`;
+        html += `<tr><td><strong>${r.code}</strong></td><td>${r.mode}${bet}</td><td>${r.connected}/${r.players + r.coms}</td><td>${status}</td><td><button class="btn-destroy" onclick="destroyRoom('${r.code}')">폭파</button></td></tr>`;
         // Player details row
         if (r.playerDetails) {
           const players = r.playerDetails.filter(p => p && !p.isCOM).map(p => {
@@ -423,6 +428,15 @@ async function withdrawFees() {
     toast('출금 완료! 새 잔액: ' + data.newBalance + ' TON');
     loadContract();
   } catch (e) { toast('출금 실패: ' + e.message, true); }
+}
+
+async function destroyRoom(roomCode) {
+  if (!confirm(`${roomCode} 방을 폭파하시겠습니까?\n방에 있는 모든 플레이어가 로비로 이동됩니다.`)) return;
+  try {
+    const data = await api('POST', '/api/admin/destroy-room', { roomCode });
+    toast(data.message);
+    loadStats();
+  } catch (e) { toast('방 폭파 실패: ' + e.message, true); }
 }
 
 async function forceRefund() {
